@@ -1,5 +1,6 @@
 import { HttpError, assertWorldId, jsonResponse, parsePositiveInt } from "./protocol.js";
-export { WorldCoordinator } from "./WorldCoordinator.js";
+import { WorldCoordinator } from "./WorldCoordinator.js";
+export { WorldCoordinator };
 
 async function digestToken(value) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
@@ -35,7 +36,8 @@ function parseWorldRoute(pathname) {
 }
 
 function coordinatorStub(env, worldId) {
-  return env.WORLD_COORDINATOR.getByName(worldId);
+  const id = env.WORLD_COORDINATOR.idFromName(worldId);
+  return env.WORLD_COORDINATOR.get(id);
 }
 
 function rpcToResponse(result, successStatus = 200) {
@@ -137,6 +139,10 @@ export default {
       if (!route) return jsonResponse({ error: "NOT_FOUND" }, 404);
 
       const stub = coordinatorStub(env, route.worldId);
+
+      if (request.method === "GET" && route.action === "/debug-ping") {
+        return rpcToResponse(await stub.ping());
+      }
 
       if (request.method === "GET" && route.action === "/status") {
         return rpcToResponse(await stub.status(route.worldId));

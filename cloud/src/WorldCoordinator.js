@@ -47,6 +47,10 @@ export class WorldCoordinator extends DurableObject {
     }
   }
 
+  async ping() {
+    return { ok: true, value: { pong: true } };
+  }
+
   async status(worldId) {
     return this.rpc(() => this.handleStatus(worldId));
   }
