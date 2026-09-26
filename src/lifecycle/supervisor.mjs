@@ -84,7 +84,7 @@ export class Supervisor {
       const copy = await this.files.snapshot();
       if (copy.sha256 !== this.state.session.baseSha256) throw new Error('PRESTART_HASH_MISMATCH');
       this.state.phase = 'starting'; await this.record();
-      const process = await this.server.start();
+      const process = await this.server.start(copy);
       this.state.phase = 'running'; this.state.pid = process.pid; await this.record();
       return { phase: 'running', pid: process.pid };
     } catch (error) { await this.recover(error); throw error; }
@@ -93,8 +93,24 @@ export class Supervisor {
     if (!['running', 'recovery_required'].includes(this.state.phase)) throw new Error('NOT_RUNNING');
     const recovery = this.state.phase === 'recovery_required';
     try {
+      let confirmed;
+      if (!recovery && this.server.finalize) {
+        this.state.phase = 'finalizing'; await this.record();
+        // stopServer owns the command queue. Pulse directly while waiting so
+        // queued timer callbacks cannot starve ownership during a long autosave.
+        confirmed = await this.server.finalize(async () => {
+          await this.owned();
+          const beat = await this.cloud.heartbeat(this.state.session.sessionId);
+          if (beat.sessionId !== this.state.session.sessionId || !beat.heartbeat) throw new Error('HEARTBEAT_INVALID');
+          this.state.lastHeartbeatUtc = beat.lastHeartbeatUtc;
+          await this.record();
+        });
+        this.state.lastConfirmedSave = confirmed; await this.record();
+      }
       this.state.phase = 'stopping'; await this.record();
-      await this.server.stop(); await this.server.assertStopped();
+      const final = await this.server.stop(confirmed);
+      if (final) this.state.lastConfirmedSave = final;
+      await this.server.assertStopped();
       this.state.phase = recovery ? 'recovery_required' : 'stopped'; await this.record();
       return { phase: this.state.phase };
     } catch (error) { await this.recover(error); throw error; }
@@ -111,6 +127,7 @@ export class Supervisor {
     try {
       await this.owned();
       const snapshot = await this.files.snapshot();
+      if (this.state.lastConfirmedSave && (snapshot.sha256 !== this.state.lastConfirmedSave.sha256 || snapshot.bytes !== this.state.lastConfirmedSave.bytes)) throw new Error('UNCONFIRMED_SAVE_CHANGE');
       const bytes = await this.files.readStage(snapshot.path);
       if (!bytes.length || bytes.length !== snapshot.bytes || digest(bytes) !== snapshot.sha256) throw new Error('STAGING_INTEGRITY_FAILED');
       this.state.phase = 'publishing'; this.state.snapshot = snapshot; await this.record();
