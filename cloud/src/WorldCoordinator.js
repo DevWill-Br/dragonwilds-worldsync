@@ -18,11 +18,6 @@ async function sha256Hex(bytes) {
 }
 
 export class WorldCoordinator extends DurableObject {
-  constructor(ctx, env) {
-    super(ctx, env);
-    this.mutationTail = Promise.resolve();
-  }
-
   async rpc(action) {
     try {
       return { ok: true, value: await action() };
@@ -66,7 +61,7 @@ export class WorldCoordinator extends DurableObject {
   }
 
   async runExclusive(action) {
-    const previous = this.mutationTail;
+    const previous = this.mutationTail || Promise.resolve();
     let release;
     this.mutationTail = new Promise((resolve) => {
       release = resolve;
