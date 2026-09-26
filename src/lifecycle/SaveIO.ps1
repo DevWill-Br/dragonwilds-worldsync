@@ -15,7 +15,9 @@ function Assert-PathSafe([string]$Value) {
 }
 function Assert-Stopped {
     if (Test-Path -LiteralPath (Join-Path $resolved 'server.running')) { throw 'WS_SERVER_ACTIVE' }
-    if (Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -match 'Dragonwilds' }) { throw 'WS_SERVER_ACTIVE' }
+    # The regular game client is not a writer of the supervised server save.
+    # Match the dedicated launcher and shipping executable, as in the adapter.
+    if (Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -match '^RSDragonwilds.*Server(?:-|$)' }) { throw 'WS_SERVER_ACTIVE' }
 }
 function Hash([IO.Stream]$Stream) {
     $Stream.Position=0
