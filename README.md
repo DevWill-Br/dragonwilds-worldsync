@@ -4,6 +4,10 @@
 
 Created by **Will**.
 
+WorldSync 2.0 development: see the [synthetic Dedicated Server lifecycle](docs/DEDICATED_LIFECYCLE.md)
+and [local cloud runtime](cloud/README.md). The lifecycle preview does not launch
+the real server or migrate real saves; the desktop UI below remains the legacy workflow.
+
 ## What it does
 - guided first-time setup
 - create a shared world folder structure automatically

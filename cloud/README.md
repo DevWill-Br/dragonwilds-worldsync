@@ -1,5 +1,9 @@
 # WorldSync cloud: local development
 
+The [synthetic dedicated lifecycle milestone](../docs/DEDICATED_LIFECYCLE.md)
+adds `npm run test:lifecycle` and a foreground supervisor CLI. Its integration
+harness starts the Worker through `npm run dev` with an isolated `--config` file.
+
 ```powershell
 npm ci
 npm run check

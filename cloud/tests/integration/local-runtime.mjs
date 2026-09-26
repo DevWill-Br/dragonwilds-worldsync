@@ -7,7 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { cloudRoot, localArgs, wranglerBin } from '../../scripts/local-paths.mjs';
+import { cloudRoot } from '../../scripts/local-paths.mjs';
 
 const run = promisify(execFile);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -34,9 +34,10 @@ const logsDir = path.join(cloudRoot, '.wrangler', 'local-validation');
 await mkdir(logsDir, { recursive: true });
 
 async function start() {
-  child = spawn(process.execPath, [wranglerBin, ...localArgs({ configPath, statePath, port })], {
-    cwd: scratch, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false' }
+  if (!process.env.npm_execpath) throw new Error('Run through npm run test:local or npm run test:lifecycle.');
+  child = spawn(process.execPath, [process.env.npm_execpath, 'run', 'dev', '--', '--config', configPath, '--port', String(port)], {
+    cwd: cloudRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, WORLDSYNC_LOCAL_STATE_DIR: statePath, WRANGLER_SEND_METRICS: 'false', CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false' }
   });
   for (const stream of [child.stdout, child.stderr]) stream.on('data', data => { logs += data.toString().replaceAll(token, '[REDACTED]'); });
   let spawnError;
@@ -103,6 +104,10 @@ try {
   assert.equal(persisted.availability, 'recovery_required');
   assert.equal((await request('/v1/worlds/worldsynctest/acquire', { host: 'other', machineId: 'other' }, 409)).error, 'RECOVERY_REQUIRED');
   console.log('PASS restart: persisted ownership retained; stale session cannot be stolen');
+  if (process.argv.includes('--lifecycle')) {
+    const { lifecycleSuite } = await import('./lifecycle-suite.mjs');
+    await lifecycleSuite({ base, token });
+  }
   console.log(`Validated ${base}; isolated synthetic state retained at ${statePath}`);
 } finally {
   await stop();

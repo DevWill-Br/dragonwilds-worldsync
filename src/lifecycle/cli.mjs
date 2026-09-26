@@ -9,10 +9,12 @@ if (process.argv[2] === 'detect') {
 } else {
   const [name, worldId, baseUrl = 'http://127.0.0.1:8787'] = process.argv.slice(2);
   if (!name || !worldId) throw new Error('Usage: node src/lifecycle/cli.mjs <fixture-name> <synthetic-world-id> [localhost-url], or detect');
+  const heartbeatMs = Number(process.env.WORLDSYNC_HEARTBEAT_MS || 15000);
+  if (!Number.isInteger(heartbeatMs) || heartbeatMs < 400 || heartbeatMs > 30000) throw new Error('INVALID_HEARTBEAT_INTERVAL');
   const files = await FixtureFiles.create(name);
   const server = new FixtureServer(files);
   const cloud = new CloudClient({ baseUrl, worldId, token: process.env.WORLDSYNC_API_TOKEN });
-  const supervisor = await new Supervisor({ files, server, cloud }).open();
+  const supervisor = await new Supervisor({ files, server, cloud, heartbeatMs }).open();
   const commands = {
     status: () => supervisor.status(), assume: () => supervisor.assume(),
     'start-server': () => supervisor.startServer(), 'stop-server': () => supervisor.stopServer(),

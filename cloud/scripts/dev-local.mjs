@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import { localArgs, localStatePath, wranglerBin } from './local-paths.mjs';
 
 const options = {};
@@ -6,8 +7,9 @@ const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i += 2) {
   const [flag, value] = argv.slice(i, i + 2);
   if (flag === '--port' && /^\d+$/.test(value) && Number(value) > 0 && Number(value) < 65536) options.port = Number(value);
+  else if (flag === '--config' && value && path.isAbsolute(value)) options.configPath = value;
   else if (flag === '--log-level' && ['info', 'log', 'warn', 'error', 'none'].includes(value)) options.logLevel = value;
-  else throw new Error('Supported local options: --port <1-65535>, --log-level <info|log|warn|error|none>.');
+  else throw new Error('Supported local options: --port <1-65535>, --config <absolute-path>, --log-level <info|log|warn|error|none>.');
 }
 const statePath = localStatePath();
 console.log(`Local-only persistence: ${statePath}`);

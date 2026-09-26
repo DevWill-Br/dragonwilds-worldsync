@@ -6,6 +6,7 @@
     "check": "node --check src/index.js && node --check src/WorldCoordinator.js && node --check src/protocol.js && node --test tests/*.test.mjs",
     "dev": "node scripts/dev-local.mjs",
     "test:local": "node tests/integration/local-runtime.mjs",
+    "test:lifecycle": "node tests/integration/local-runtime.mjs --lifecycle",
     "repro:local": "node scripts/repro-local.mjs",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
