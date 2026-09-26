@@ -20,8 +20,6 @@ async function sha256Hex(bytes) {
 export class WorldCoordinator extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    this.ctx = ctx;
-    this.env = env;
     this.mutationTail = Promise.resolve();
   }
 
