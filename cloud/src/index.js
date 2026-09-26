@@ -57,7 +57,7 @@ async function forward(request, env, worldId, internalPath) {
     }
   }
 
-  const internalRequest = new Request("https://worldsync.internal" + internalPath, {
+  const internalRequest = new Request("http://worldsync.internal" + internalPath, {
     method: request.method,
     headers,
     body
@@ -67,7 +67,7 @@ async function forward(request, env, worldId, internalPath) {
 
 async function downloadLatest(env, worldId) {
   const statusResponse = await coordinatorStub(env, worldId).fetch(
-    new Request("https://worldsync.internal/status", {
+    new Request("http://worldsync.internal/status", {
       method: "GET",
       headers: { "x-world-id": worldId }
     })
