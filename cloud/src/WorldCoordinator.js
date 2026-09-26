@@ -3,7 +3,6 @@ import {
   HttpError,
   assertWorldId,
   isSha256,
-  jsonResponse,
   normalizeIdentity,
   parsePositiveInt,
   revisionObjectKey,
@@ -26,30 +25,42 @@ export class WorldCoordinator extends DurableObject {
     this.mutationTail = Promise.resolve();
   }
 
-  async fetch(request) {
+  async rpc(action) {
     try {
-      const url = new URL(request.url);
-      const worldId = assertWorldId(request.headers.get("x-world-id") || "");
-      if (request.method === "GET" && url.pathname === "/status") {
-        return this.handleStatus(worldId);
-      }
-      if (request.method === "POST" && url.pathname === "/acquire") {
-        return this.runExclusive(() => this.handleAcquire(worldId, request));
-      }
-      if (request.method === "POST" && url.pathname === "/heartbeat") {
-        return this.runExclusive(() => this.handleHeartbeat(worldId, request));
-      }
-      if (request.method === "POST" && url.pathname === "/commit") {
-        return this.runExclusive(() => this.handleCommit(worldId, request));
-      }
-      return jsonResponse({ error: "NOT_FOUND" }, 404);
+      return { ok: true, value: await action() };
     } catch (error) {
       if (error instanceof HttpError) {
-        return jsonResponse({ error: error.code, message: error.message }, error.status);
+        return {
+          ok: false,
+          status: error.status,
+          error: error.code,
+          message: error.message
+        };
       }
-      console.error("WorldCoordinator failure", error);
-      return jsonResponse({ error: "INTERNAL_ERROR", message: "Coordinator operation failed." }, 500);
+      console.error("WorldCoordinator RPC failure", error);
+      return {
+        ok: false,
+        status: 500,
+        error: "INTERNAL_ERROR",
+        message: "Coordinator operation failed."
+      };
     }
+  }
+
+  async status(worldId) {
+    return this.rpc(() => this.handleStatus(worldId));
+  }
+
+  async acquire(worldId, input) {
+    return this.rpc(() => this.runExclusive(() => this.handleAcquire(worldId, input)));
+  }
+
+  async heartbeat(worldId, sessionId) {
+    return this.rpc(() => this.runExclusive(() => this.handleHeartbeat(worldId, sessionId)));
+  }
+
+  async commit(worldId, input) {
+    return this.rpc(() => this.runExclusive(() => this.handleCommit(worldId, input)));
   }
 
   async runExclusive(action) {
@@ -78,6 +89,7 @@ export class WorldCoordinator extends DurableObject {
   }
 
   async loadState(worldId) {
+    assertWorldId(worldId);
     const state = await this.ctx.storage.get(STATE_KEY);
     if (!state) return this.newState(worldId);
     if (state.schemaVersion !== 1 || state.worldId !== worldId) {
@@ -102,7 +114,7 @@ export class WorldCoordinator extends DurableObject {
   async handleStatus(worldId) {
     const state = await this.loadState(worldId);
     const disposition = sessionDisposition(state.session, this.staleSeconds());
-    return jsonResponse({
+    return {
       worldId,
       currentRevision: state.currentRevision,
       latest: state.latest,
@@ -115,15 +127,12 @@ export class WorldCoordinator extends DurableObject {
         : null,
       availability: disposition.availability,
       updatedAtUtc: state.updatedAtUtc
-    });
+    };
   }
 
-  async handleAcquire(worldId, request) {
-    const body = await request.json().catch(() => {
-      throw new HttpError(400, "INVALID_JSON", "A JSON request body is required.");
-    });
-    const host = normalizeIdentity(body.host, "host");
-    const machineId = normalizeIdentity(body.machineId, "machineId");
+  async handleAcquire(worldId, input) {
+    const host = normalizeIdentity(input?.host, "host");
+    const machineId = normalizeIdentity(input?.machineId, "machineId");
     const state = await this.loadState(worldId);
 
     if (state.session) {
@@ -152,20 +161,17 @@ export class WorldCoordinator extends DurableObject {
     state.session = session;
     await this.saveState(state);
 
-    return jsonResponse(
-      {
-        acquired: true,
-        worldId,
-        sessionId: session.sessionId,
-        baseRevision: session.baseRevision,
-        baseSha256: session.baseSha256,
-        latest: state.latest
-      },
-      201
-    );
+    return {
+      acquired: true,
+      worldId,
+      sessionId: session.sessionId,
+      baseRevision: session.baseRevision,
+      baseSha256: session.baseSha256,
+      latest: state.latest
+    };
   }
 
-  async requireOwnedSession(state, sessionId) {
+  requireOwnedSession(state, sessionId) {
     if (!state.session) {
       throw new HttpError(409, "NO_ACTIVE_SESSION", "This world has no active session.");
     }
@@ -175,33 +181,38 @@ export class WorldCoordinator extends DurableObject {
     return state.session;
   }
 
-  async handleHeartbeat(worldId, request) {
-    const body = await request.json().catch(() => {
-      throw new HttpError(400, "INVALID_JSON", "A JSON request body is required.");
-    });
+  async handleHeartbeat(worldId, sessionId) {
     const state = await this.loadState(worldId);
-    const session = await this.requireOwnedSession(state, body.sessionId);
+    const session = this.requireOwnedSession(state, sessionId);
     session.lastHeartbeatUtc = new Date().toISOString();
     state.session = session;
     await this.saveState(state);
-    return jsonResponse({ ok: true, sessionId: session.sessionId, lastHeartbeatUtc: session.lastHeartbeatUtc });
+    return {
+      heartbeat: true,
+      sessionId: session.sessionId,
+      lastHeartbeatUtc: session.lastHeartbeatUtc
+    };
   }
 
-  async handleCommit(worldId, request) {
-    const sessionId = request.headers.get("x-session-id");
-    const baseRevision = Number.parseInt(request.headers.get("x-base-revision") || "", 10);
-    const declaredSha = (request.headers.get("x-save-sha256") || "").toLowerCase();
-    const originalFileName = safeSaveFileName(request.headers.get("x-save-file-name") || "world.sav");
+  async handleCommit(worldId, input) {
+    const sessionId = input?.sessionId;
+    const baseRevision = input?.baseRevision;
+    const declaredSha = typeof input?.declaredSha === "string" ? input.declaredSha.toLowerCase() : "";
+    const originalFileName = safeSaveFileName(input?.originalFileName || "world.sav");
+    const bytes = input?.bytes;
 
     if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) {
-      throw new HttpError(400, "INVALID_BASE_REVISION", "x-base-revision is invalid.");
+      throw new HttpError(400, "INVALID_BASE_REVISION", "Base revision is invalid.");
     }
     if (!isSha256(declaredSha)) {
-      throw new HttpError(400, "INVALID_SHA256", "x-save-sha256 must contain a lowercase SHA-256.");
+      throw new HttpError(400, "INVALID_SHA256", "Declared SHA-256 must be lowercase hexadecimal.");
+    }
+    if (!(bytes instanceof ArrayBuffer)) {
+      throw new HttpError(400, "INVALID_SAVE_BODY", "Save bytes are required.");
     }
 
     const state = await this.loadState(worldId);
-    const session = await this.requireOwnedSession(state, sessionId);
+    const session = this.requireOwnedSession(state, sessionId);
     if (session.baseRevision !== baseRevision || state.currentRevision !== baseRevision) {
       throw new HttpError(409, "REVISION_CONFLICT", "The canonical revision changed. Session was retained.");
     }
@@ -210,13 +221,12 @@ export class WorldCoordinator extends DurableObject {
       throw new HttpError(409, "HASH_CONFLICT", "The canonical hash changed. Session was retained.");
     }
 
-    const bytes = await request.arrayBuffer();
     if (bytes.byteLength < 1 || bytes.byteLength > this.maxSaveBytes()) {
       throw new HttpError(413, "SAVE_SIZE_REJECTED", "Save size is outside the configured limit.");
     }
     const actualSha = await sha256Hex(bytes);
     if (actualSha !== declaredSha) {
-      throw new HttpError(422, "HASH_MISMATCH", "Uploaded bytes do not match x-save-sha256.");
+      throw new HttpError(422, "HASH_MISMATCH", "Uploaded bytes do not match the declared SHA-256.");
     }
 
     session.status = "committing";
@@ -229,12 +239,17 @@ export class WorldCoordinator extends DurableObject {
       if (!Number.isSafeInteger(nextRevision)) {
         throw new HttpError(409, "REVISION_LIMIT", "Revision limit reached.");
       }
+
       const objectKey = revisionObjectKey(worldId, nextRevision, actualSha);
       const existing = await this.env.WORLD_SAVES.head(objectKey);
 
       if (existing) {
         if (existing.size !== bytes.byteLength || existing.customMetadata?.sha256 !== actualSha) {
-          throw new HttpError(500, "IMMUTABLE_OBJECT_CONFLICT", "An immutable revision key already exists with different metadata.");
+          throw new HttpError(
+            500,
+            "IMMUTABLE_OBJECT_CONFLICT",
+            "An immutable revision key already exists with different metadata."
+          );
         }
       } else {
         await this.env.WORLD_SAVES.put(objectKey, bytes, {
@@ -276,7 +291,7 @@ export class WorldCoordinator extends DurableObject {
         session: null
       };
       await this.saveState(committedState);
-      return jsonResponse({ committed: true, worldId, latest }, 201);
+      return { committed: true, worldId, latest };
     } catch (error) {
       try {
         const retained = await this.loadState(worldId);

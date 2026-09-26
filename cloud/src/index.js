@@ -35,59 +35,82 @@ function parseWorldRoute(pathname) {
 }
 
 function coordinatorStub(env, worldId) {
-  const id = env.WORLD_COORDINATOR.idFromName(worldId);
-  return env.WORLD_COORDINATOR.get(id);
+  return env.WORLD_COORDINATOR.getByName(worldId);
 }
 
-async function forward(request, env, worldId, internalPath) {
-  const headers = new Headers(request.headers);
-  headers.delete("authorization");
-  headers.set("x-world-id", worldId);
+function rpcToResponse(result, successStatus = 200) {
+  if (result?.ok === true) {
+    return jsonResponse(result.value, successStatus);
+  }
+  const status = Number.isInteger(result?.status) ? result.status : 500;
+  return jsonResponse(
+    {
+      error: result?.error || "INTERNAL_ERROR",
+      message: result?.message || "Coordinator operation failed."
+    },
+    status
+  );
+}
 
-  let body;
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    const length = Number.parseInt(request.headers.get("content-length") || "0", 10);
-    const max = parsePositiveInt(env.MAX_SAVE_BYTES, 32 * 1024 * 1024, 100 * 1024 * 1024);
-    if (Number.isFinite(length) && length > max) {
-      throw new HttpError(413, "REQUEST_TOO_LARGE", "Request body exceeds the configured save limit.");
-    }
-    body = await request.arrayBuffer();
-    if (body.byteLength > max) {
-      throw new HttpError(413, "REQUEST_TOO_LARGE", "Request body exceeds the configured save limit.");
-    }
+async function parseJsonBody(request) {
+  return request.json().catch(() => {
+    throw new HttpError(400, "INVALID_JSON", "A JSON request body is required.");
+  });
+}
+
+async function commitViaRpc(request, env, worldId) {
+  const sessionId = request.headers.get("x-session-id");
+  const baseRevision = Number.parseInt(request.headers.get("x-base-revision") || "", 10);
+  const declaredSha = (request.headers.get("x-save-sha256") || "").toLowerCase();
+  const originalFileName = request.headers.get("x-save-file-name") || "world.sav";
+
+  const length = Number.parseInt(request.headers.get("content-length") || "0", 10);
+  const max = parsePositiveInt(env.MAX_SAVE_BYTES, 32 * 1024 * 1024, 100 * 1024 * 1024);
+  if (Number.isFinite(length) && length > max) {
+    throw new HttpError(413, "REQUEST_TOO_LARGE", "Request body exceeds the configured save limit.");
   }
 
-  return coordinatorStub(env, worldId).fetch(
-    "http://worldsync.internal" + internalPath,
-    {
-      method: request.method,
-      headers,
-      body
-    }
-  );
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > max) {
+    throw new HttpError(413, "REQUEST_TOO_LARGE", "Request body exceeds the configured save limit.");
+  }
+
+  const result = await coordinatorStub(env, worldId).commit(worldId, {
+    sessionId,
+    baseRevision,
+    declaredSha,
+    originalFileName,
+    bytes
+  });
+  return rpcToResponse(result, 201);
 }
 
 async function downloadLatest(env, worldId) {
-  const statusResponse = await coordinatorStub(env, worldId).fetch(
-    "http://worldsync.internal/status",
-    {
-      method: "GET",
-      headers: { "x-world-id": worldId }
-    }
-  );
-  if (!statusResponse.ok) return statusResponse;
+  const statusResult = await coordinatorStub(env, worldId).status(worldId);
+  if (statusResult?.ok !== true) {
+    return rpcToResponse(statusResult);
+  }
 
-  const status = await statusResponse.json();
+  const status = statusResult.value;
   if (!status.latest) {
-    return jsonResponse({ error: "NO_CANONICAL_REVISION", message: "This world has no published revision yet." }, 404);
+    return jsonResponse(
+      { error: "NO_CANONICAL_REVISION", message: "This world has no published revision yet." },
+      404
+    );
   }
 
   const object = await env.WORLD_SAVES.get(status.latest.objectKey);
   if (!object) {
-    return jsonResponse({ error: "REVISION_MISSING", message: "Canonical revision metadata exists but its R2 object is missing." }, 503);
+    return jsonResponse(
+      { error: "REVISION_MISSING", message: "Canonical revision metadata exists but its R2 object is missing." },
+      503
+    );
   }
   if (object.size !== status.latest.bytes || object.customMetadata?.sha256 !== status.latest.sha256) {
-    return jsonResponse({ error: "REVISION_INTEGRITY_FAILED", message: "R2 metadata does not match the canonical revision." }, 503);
+    return jsonResponse(
+      { error: "REVISION_INTEGRITY_FAILED", message: "R2 metadata does not match the canonical revision." },
+      503
+    );
   }
 
   const headers = new Headers();
@@ -113,18 +136,26 @@ export default {
       const route = parseWorldRoute(url.pathname);
       if (!route) return jsonResponse({ error: "NOT_FOUND" }, 404);
 
+      const stub = coordinatorStub(env, route.worldId);
+
       if (request.method === "GET" && route.action === "/status") {
-        return forward(request, env, route.worldId, "/status");
+        return rpcToResponse(await stub.status(route.worldId));
       }
+
       if (request.method === "POST" && route.action === "/acquire") {
-        return forward(request, env, route.worldId, "/acquire");
+        const body = await parseJsonBody(request);
+        return rpcToResponse(await stub.acquire(route.worldId, body), 201);
       }
+
       if (request.method === "POST" && route.action === "/heartbeat") {
-        return forward(request, env, route.worldId, "/heartbeat");
+        const body = await parseJsonBody(request);
+        return rpcToResponse(await stub.heartbeat(route.worldId, body.sessionId));
       }
+
       if (request.method === "POST" && route.action === "/commit") {
-        return forward(request, env, route.worldId, "/commit");
+        return commitViaRpc(request, env, route.worldId);
       }
+
       if (request.method === "GET" && route.action === "/latest") {
         return downloadLatest(env, route.worldId);
       }
