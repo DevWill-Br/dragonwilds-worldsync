@@ -1,0 +1,7 @@
+*.sav
+*.sav.backup
+*.ini
+user.config.json
+*.local.json
+*.exe
+tests/.scratch/
