@@ -23,6 +23,11 @@
       "bucket_name": "dragonwilds-worldsync-saves"
     }
   ],
+  "secrets": {
+    "required": [
+      "WORLDSYNC_API_TOKEN"
+    ]
+  },
   "vars": {
     "SESSION_STALE_SECONDS": "120",
     "MAX_SAVE_BYTES": "33554432"
