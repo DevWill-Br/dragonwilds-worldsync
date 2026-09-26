@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "dragonwilds-worldsync-api",
   "main": "src/index.js",
-  "compatibility_date": "2026-09-26",
+  "compatibility_date": "2026-09-25",
   "durable_objects": {
     "bindings": [
       {
@@ -11,12 +11,14 @@
       }
     ]
   },
-  "exports": {
-    "WorldCoordinator": {
-      "type": "durable-object",
-      "storage": "sqlite"
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "WorldCoordinator"
+      ]
     }
-  },
+  ],
   "r2_buckets": [
     {
       "binding": "WORLD_SAVES",
