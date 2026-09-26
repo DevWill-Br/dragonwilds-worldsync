@@ -13,22 +13,24 @@ export const labRoot = path.resolve(repoRoot, '../real-server-lab');
 // This optional adapter is deliberately restricted to the qualified disposable
 // Sandbox and copied world. It does not launch a server on the host.
 export class SandboxServer {
-  constructor(files, { sandboxId, wsbPath, finalizationMs = 12 * 60_000 } = {}) {
+  constructor(files, { sandboxId, wsbPath, labPath = labRoot, finalizationMs = 12 * 60_000 } = {}) {
     if (!/^[a-f0-9-]{36}$/.test(sandboxId ?? '') || !path.isAbsolute(wsbPath ?? '')) throw new Error('INVALID_SANDBOX_CONFIG');
+    if (!path.isAbsolute(labPath)) throw new Error('INVALID_LAB_PATH');
+    this.labRoot = path.resolve(labPath);
     this.files = files; this.sandboxId = sandboxId; this.wsbPath = wsbPath;
     this.finalizationMs = finalizationMs; this.marker = path.join(files.root, 'server.running');
     this.running = false;
   }
   async prepare() {
-    for (let p = labRoot; p; p = path.dirname(p)) {
+    for (let p = this.labRoot; p; p = path.dirname(p)) {
       if ((await lstat(p)).isSymbolicLink()) throw new Error('LAB_REPARSE_POINT');
       if (path.dirname(p) === p) break;
     }
     // Persisted lease is never automatically removed after a crash.
-    this.lease = await open(path.join(labRoot, 'adapter.lock'), 'wx');
+    this.lease = await open(path.join(this.labRoot, 'adapter.lock'), 'wx');
     await this.lease.writeFile('exclusive WorldSync laboratory supervisor'); await this.lease.sync();
     for (const name of ['SandboxServer.ps1', 'Probe-Isolation.ps1']) {
-      const dest = path.join(labRoot, name);
+      const dest = path.join(this.labRoot, name);
       const info = await lstat(dest).catch(e => { if(e.code !== 'ENOENT') throw e; });
       if (info && (info.isSymbolicLink() || info.nlink !== 1)) throw new Error('LAB_LINK_REJECTED');
       await copyFile(path.join(repoRoot, 'tools/real-server-sandbox', name), dest);
@@ -42,7 +44,7 @@ export class SandboxServer {
     const command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\WorldSyncLab\\SandboxServer.ps1 -Action ${action} -RequestId ${id}${expectedHash ? ` -ExpectedSha256 ${expectedHash}` : ''}`;
     try {
       await run(this.wsbPath, ['exec', '--id', this.sandboxId, '--command', command, '--run-as', 'ExistingLogin', '--raw'], { windowsHide: true, timeout: 45_000 });
-      const result = JSON.parse((await readFile(path.join(labRoot, `reply-${id}.json`), 'utf8')).replace(/^\uFEFF/, ''));
+      const result = JSON.parse((await readFile(path.join(this.labRoot, `reply-${id}.json`), 'utf8')).replace(/^\uFEFF/, ''));
       if (result.error) throw new Error(`${result.error}_${action}_${result.line}`);
       return result;
     } catch (error) {
@@ -56,20 +58,22 @@ export class SandboxServer {
     const state = await this.inspect();
     if (state.active || await lstat(this.marker).catch(e => { if(e.code !== 'ENOENT') throw e; })) throw new Error('SERVER_ACTIVE');
   }
-  async start(expected) {
+  async start(expected, heartbeat = async () => {}) {
     await this.assertStopped();
     const bytes = await readFile(this.files.save);
     if (digest(bytes) !== expected?.sha256 || bytes.length !== expected?.bytes) throw new Error('PRESTART_HASH_MISMATCH');
-    const target = path.join(labRoot, 'adapter-input.sav');
+    const target = path.join(this.labRoot, 'adapter-input.sav');
     const info = await lstat(target).catch(e => { if(e.code !== 'ENOENT') throw e; });
     if (info && (info.isSymbolicLink() || info.nlink !== 1)) throw new Error('LAB_LINK_REJECTED');
     await writeFile(target, bytes);
     if (digest(await readFile(target)) !== digest(bytes)) throw new Error('IMPORT_HASH_MISMATCH');
     await writeFile(this.marker, 'sandbox real writer; retain on failure', { flag: 'wx' });
     this.running = true; // fail closed even if the launch response is lost
+    await heartbeat();
     const started = await this.call('Start', expected.sha256);
     const until = Date.now() + 180_000;
     while (Date.now() < until) {
+      await heartbeat();
       const state = await this.inspect();
       if (!state.active) throw new Error('SERVER_START_FAILED');
       if (state.ready) { this.initialSave = state.confirmed; return { pid: started.pid }; }
@@ -107,7 +111,7 @@ export class SandboxServer {
     const exported = await this.call('Export');
     const accepted = validateFinalSave(confirmed, exported.final, exported.latest);
     if (!/^export-[a-f0-9-]{36}\.sav$/.test(exported.exportName)) throw new Error('EXPORT_PATH_REJECTED');
-    const bytes = await readFile(path.join(labRoot, exported.exportName));
+    const bytes = await readFile(path.join(this.labRoot, exported.exportName));
     if (digest(bytes) !== accepted.sha256 || bytes.length !== accepted.bytes) throw new Error('EXPORT_HASH_MISMATCH');
     const staged = await this.files.stage(bytes);
     await rename(this.marker, path.join(this.files.root, `server-${randomUUID()}.stopped`));
@@ -118,6 +122,6 @@ export class SandboxServer {
   async dispose() {
     await this.assertStopped();
     await this.lease?.close();
-    await rename(path.join(labRoot, 'adapter.lock'), path.join(labRoot, `adapter-${randomUUID()}.closed`));
+    await rename(path.join(this.labRoot, 'adapter.lock'), path.join(this.labRoot, `adapter-${randomUUID()}.closed`));
   }
 }

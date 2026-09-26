@@ -15,9 +15,12 @@ if (process.argv[2] === 'detect') {
   const files = await FixtureFiles.create(name);
   const real = process.env.WORLDSYNC_SERVER_ADAPTER === 'sandbox';
   const server = real ? await new SandboxServer(files, {
-    sandboxId: process.env.WORLDSYNC_SANDBOX_ID, wsbPath: process.env.WORLDSYNC_WSB_PATH
+    sandboxId: process.env.WORLDSYNC_SANDBOX_ID, wsbPath: process.env.WORLDSYNC_WSB_PATH,
+    labPath: process.env.WORLDSYNC_LAB_PATH
   }).prepare() : new FixtureServer(files);
-  const cloud = new CloudClient({ baseUrl, worldId, token: process.env.WORLDSYNC_API_TOKEN });
+  const cloud = new CloudClient({ baseUrl, worldId, token: process.env.WORLDSYNC_API_TOKEN,
+    host: process.env.WORLDSYNC_HOST, machineId: process.env.WORLDSYNC_MACHINE_ID,
+    saveFileName: real ? 'WorldSyncTest.sav' : 'synthetic.sav' });
   const supervisor = await new Supervisor({ files, server, cloud, heartbeatMs }).open();
   const commands = {
     status: () => supervisor.status(), assume: () => supervisor.assume(),

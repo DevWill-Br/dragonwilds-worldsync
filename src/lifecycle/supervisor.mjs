@@ -84,7 +84,12 @@ export class Supervisor {
       const copy = await this.files.snapshot();
       if (copy.sha256 !== this.state.session.baseSha256) throw new Error('PRESTART_HASH_MISMATCH');
       this.state.phase = 'starting'; await this.record();
-      const process = await this.server.start(copy);
+      const process = await this.server.start(copy, async () => {
+        await this.owned();
+        const beat = await this.cloud.heartbeat(this.state.session.sessionId);
+        if (beat.sessionId !== this.state.session.sessionId || !beat.heartbeat) throw new Error('HEARTBEAT_INVALID');
+        this.state.lastHeartbeatUtc = beat.lastHeartbeatUtc; await this.record();
+      });
       this.state.phase = 'running'; this.state.pid = process.pid; await this.record();
       return { phase: 'running', pid: process.pid };
     } catch (error) { await this.recover(error); throw error; }

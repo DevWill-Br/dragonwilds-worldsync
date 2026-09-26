@@ -16,13 +16,16 @@ export function cloudOrigin(baseUrl) {
 
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 export class CloudClient {
-  constructor({ baseUrl, token, worldId, timeoutMs = 10000 }) {
+  constructor({ baseUrl, token, worldId, timeoutMs = 10000, host = 'lifecycle-fixture', machineId = 'isolated-fixture', saveFileName = 'synthetic.sav' }) {
     const origin = cloudOrigin(baseUrl);
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(worldId) || typeof token !== 'string' || token.length < 24) throw new Error('INVALID_CLOUD_CONFIG');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) throw new Error('INVALID_CLOUD_TIMEOUT');
     this.base = `${origin}/v1/worlds/${worldId}`;
     Object.defineProperty(this, 'token', { value: token }); // exclude from JSON/log enumeration
     this.timeoutMs = timeoutMs;
+    this.identity = { host, machineId };
+    if (!/^[A-Za-z0-9_-]+\.sav$/.test(saveFileName)) throw new Error('INVALID_SAVE_FILE_NAME');
+    this.saveFileName = saveFileName;
   }
   async request(action, { body, binary, headers = {} } = {}) {
     let response;
@@ -41,7 +44,7 @@ export class CloudClient {
     return response;
   }
   async status() { return (await this.request('status')).json(); }
-  async acquire() { return (await this.request('acquire', { body: { host: 'lifecycle-fixture', machineId: 'isolated-fixture' } })).json(); }
+  async acquire() { return (await this.request('acquire', { body: this.identity })).json(); }
   async heartbeat(sessionId) { return (await this.request('heartbeat', { body: { sessionId } })).json(); }
   async download(latest) {
     const response = await this.request('latest');
@@ -59,7 +62,7 @@ export class CloudClient {
   async commit(session, bytes) {
     return (await this.request('commit', { binary: bytes, headers: {
       'x-session-id': session.sessionId, 'x-base-revision': String(session.baseRevision),
-      'x-save-sha256': digest(bytes), 'x-save-file-name': 'synthetic.sav'
+      'x-save-sha256': digest(bytes), 'x-save-file-name': this.saveFileName
     } })).json();
   }
 }

@@ -20,7 +20,7 @@ function Read-Private([string]$Prompt, [switch]$Generate) {
 try {
     $root=(Resolve-Path -LiteralPath $LabRoot).Path
     $expected=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../real-server-lab'))
-    if ($root -ne $expected -or (Test-Path (Join-Path $root 'adapter.lock'))) { throw 'Laboratorio incorreto ou em uso.' }
+    if (($root -ne $expected -and -not (Test-Path (Join-Path $root '.worldsync-lab.json'))) -or (Test-Path (Join-Path $root 'adapter.lock'))) { throw 'Laboratorio incorreto ou em uso.' }
     $ini=Join-Path $root 'run-userdir-001\UserData\Saved\Config\WindowsServer\DedicatedServer.ini'
     if (-not (Test-Path -LiteralPath $ini -PathType Leaf)) { throw 'INI isolado nao encontrado.' }
     $item=Get-Item -LiteralPath $ini
