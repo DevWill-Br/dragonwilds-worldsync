@@ -159,10 +159,38 @@ This cloud layer does not yet:
 
 - start or stop the Dragonwilds Dedicated Server;
 - import the canonical save into the server directory;
-- run the Windows heartbeat loop;
 - offer explicit stale-session recovery;
 - authenticate individual friends separately;
 - migrate `WorldSyncTest.sav` into revision 1.
 
 Those remain separate milestones. The real save must not be uploaded until local
 backup, client-side hash verification and explicit migration approval are complete.
+
+
+## Windows client preview
+
+The PowerShell preview can exercise the coordinator without touching any save file.
+
+First set a development-only token in the current terminal:
+
+```powershell
+$env:WORLDSYNC_API_TOKEN = '<development token>'
+```
+
+Then, while `wrangler dev` is running:
+
+```powershell
+.\src\WorldSync2.ps1 -Action CloudStatus -ApiBaseUrl http://127.0.0.1:8787 -WorldId worldsynctest
+
+$session = .\src\WorldSync2.ps1 -Action CloudAcquire -ApiBaseUrl http://127.0.0.1:8787 -WorldId worldsynctest
+
+.\src\WorldSync2.ps1 -Action CloudHeartbeat -ApiBaseUrl http://127.0.0.1:8787 -WorldId worldsynctest -SessionId $session.sessionId
+```
+
+`CloudHeartbeat` stays in the foreground until Ctrl+C. Stopping it does not release
+ownership. After the configured stale interval, status changes to
+`recovery_required`; another PC is still not allowed to steal the world.
+
+Cloud download and cloud publish are deliberately not wired into the Windows CLI
+yet. They will be added together with Dedicated Server stop/start enforcement,
+local staging, backup and client-side SHA-256 verification.
