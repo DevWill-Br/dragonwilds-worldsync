@@ -60,3 +60,5 @@ Faltam deploy Cloudflare autorizado, transporte/autenticacao fora de localhost e
 - Original e backup preservados: original 265043 bytes, mtime UTC 2026-09-26T05:41:39.4100620Z, SHA-256 `369F0414F45506EBA6D4908361F07C9ECD6C0778888AC167846CA9207F89C0F6`; backup somente leitura com mesmo hash.
 - Uma tentativa de E2E anterior ao start falhou no uso de File.Replace com backup nulo pelo PowerShell; corrigido com destino de backup explicito. O ciclo completo acima passou apos essa correcao.
 - Credenciais fornecidas nao aparecem nos arquivos alterados do repositorio. A VM e os Workers de teste foram encerrados; backups, journals e evidencias locais foram preservados.
+
+Atualizacao cloud real: perfis e caminhos por maquina agora sao configuraveis por tools/host/setup-host.ps1 e tools/host/worldsync.ps1. Consulte PRODUCTION_SETUP.md. O cliente aceita HTTPS remoto, e a verificacao do hash da revisao importada substitui a dependencia de uma copia fonte fixa na prova de isolamento. O start tambem mantem heartbeat durante readiness. As evidencias de qualificacao acima continuam referentes ao teste local anterior.
