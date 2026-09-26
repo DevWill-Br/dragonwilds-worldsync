@@ -7,6 +7,7 @@
     "dev": "node scripts/dev-local.mjs",
     "test:local": "node tests/integration/local-runtime.mjs",
     "test:lifecycle": "node tests/integration/local-runtime.mjs --lifecycle",
+    "test:real": "node tests/integration/local-runtime.mjs --real-server",
     "repro:local": "node scripts/repro-local.mjs",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"

@@ -18,7 +18,7 @@ const configPath = path.join(scratch, 'wrangler.json');
 const config = JSON.parse(await readFile(path.join(cloudRoot, 'wrangler.jsonc'), 'utf8'));
 config.main = path.join(cloudRoot, 'src/index.js');
 delete config.$schema;
-config.vars.SESSION_STALE_SECONDS = '5';
+config.vars.SESSION_STALE_SECONDS = process.argv.includes('--real-server') ? '300' : '5';
 await writeFile(configPath, JSON.stringify(config));
 // Only this isolated, generated secret file is loaded. Never read the real .dev.vars.
 await writeFile(path.join(scratch, '.dev.vars'), `WORLDSYNC_API_TOKEN=${token}\n`);
@@ -68,6 +68,10 @@ async function request(route, body, expected = 200) {
 
 try {
   await start();
+  if (process.argv.includes('--real-server')) {
+    const { realServerSuite } = await import('./real-server-suite.mjs');
+    await realServerSuite({ base, token });
+  } else {
   assert.equal((await request('/health')).ok, true);
   assert.equal((await request('/v1/worlds/worldsynctest/debug-ping')).pong, true);
   const fresh = await request('/v1/worlds/worldsynctest/status');
@@ -109,6 +113,7 @@ try {
     await lifecycleSuite({ base, token });
   }
   console.log(`Validated ${base}; isolated synthetic state retained at ${statePath}`);
+  }
 } finally {
   await stop();
   await writeFile(path.join(logsDir, 'wrangler.log'), logs);
