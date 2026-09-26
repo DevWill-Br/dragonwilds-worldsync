@@ -5,3 +5,6 @@ user.config.json
 *.local.json
 *.exe
 tests/.scratch/
+cloud/node_modules/
+cloud/.wrangler/
+cloud/.dev.vars
