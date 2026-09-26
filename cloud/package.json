@@ -4,11 +4,15 @@
   "type": "module",
   "scripts": {
     "check": "node --check src/index.js && node --check src/WorldCoordinator.js && node --check src/protocol.js && node --test tests/*.test.mjs",
-    "dev": "wrangler dev",
+    "dev": "node scripts/dev-local.mjs",
+    "test:local": "node tests/integration/local-runtime.mjs",
+    "repro:local": "node scripts/repro-local.mjs",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
   },
   "devDependencies": {
+    "miniflare": "4.20260714.0",
     "wrangler": "4.112.0"
-  }
+  },
+  "engines": { "node": ">=22.0.0" }
 }
