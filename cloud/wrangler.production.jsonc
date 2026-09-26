@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dragonwilds-worldsync-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-14",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORLD_COORDINATOR",
+        "class_name": "WorldCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "WorldCoordinator"
+      ]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "WORLD_SAVES",
+      "bucket_name": "dragonwilds-worldsync-saves"
+    }
+  ],
+  "secrets": {
+    "required": [
+      "WORLDSYNC_API_TOKEN"
+    ]
+  },
+  "vars": {
+    "SESSION_STALE_SECONDS": "120",
+    "MAX_SAVE_BYTES": "33554432"
+  }
+}

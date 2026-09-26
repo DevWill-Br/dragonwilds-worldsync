@@ -1,13 +1,27 @@
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
+
+export function cloudOrigin(baseUrl) {
+  if (typeof baseUrl !== 'string' || /[\s\\]/.test(baseUrl)) throw new Error('INVALID_CLOUD_URL');
+  let url;
+  try { url = new URL(baseUrl); } catch { throw new Error('INVALID_CLOUD_URL'); }
+  const host = url.hostname;
+  const ip = isIP(host.replace(/^\[|\]$/g, ''));
+  const dns = host.length <= 253 && host.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
+  if ((!ip && !dns) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('INVALID_CLOUD_URL');
+  const local = ['127.0.0.1', 'localhost', '[::1]'].includes(host);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) throw new Error('HTTPS_REQUIRED');
+  return url.origin;
+}
 
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 export class CloudClient {
   constructor({ baseUrl, token, worldId, timeoutMs = 10000 }) {
-    const url = new URL(baseUrl);
-    if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash) throw new Error('LOCALHOST_ONLY');
+    const origin = cloudOrigin(baseUrl);
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(worldId) || typeof token !== 'string' || token.length < 24) throw new Error('INVALID_CLOUD_CONFIG');
-    this.base = `${url.origin}/v1/worlds/${worldId}`;
-    this.token = token;
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) throw new Error('INVALID_CLOUD_TIMEOUT');
+    this.base = `${origin}/v1/worlds/${worldId}`;
+    Object.defineProperty(this, 'token', { value: token }); // exclude from JSON/log enumeration
     this.timeoutMs = timeoutMs;
   }
   async request(action, { body, binary, headers = {} } = {}) {

@@ -9,7 +9,8 @@
     "test:lifecycle": "node tests/integration/local-runtime.mjs --lifecycle",
     "test:real": "node tests/integration/local-runtime.mjs --real-server",
     "repro:local": "node scripts/repro-local.mjs",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --config wrangler.production.jsonc",
+    "smoke:production": "node scripts/smoke-production.mjs",
     "tail": "wrangler tail"
   },
   "devDependencies": {

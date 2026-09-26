@@ -160,9 +160,9 @@ export async function lifecycleSuite({ base, token }) {
     await symlink(files.root, alias, 'junction');
     await assert.rejects(noLinks(path.join(alias, 'saves', 'synthetic.sav')), /REPARSE_POINT_REJECTED/);
   }));
-  await check('path traversal and external endpoints rejected', async () => {
+  await check('path traversal and insecure remote endpoints rejected', async () => {
     await assert.rejects(FixtureFiles.create('../escape'), /INVALID_FIXTURE_NAME/);
-    assert.throws(() => new CloudClient({ baseUrl: 'https://example.com', token, worldId: 'test' }), /LOCALHOST_ONLY/);
+    assert.throws(() => new CloudClient({ baseUrl: 'http://example.com', token, worldId: 'test' }), /HTTPS_REQUIRED/);
   });
   await check('foreground CLI command sequence completes revision 2', async () => {
     const id = `cli-${randomUUID()}`;
