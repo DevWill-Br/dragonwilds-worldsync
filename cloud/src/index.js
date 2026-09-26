@@ -129,9 +129,8 @@ export default {
       return jsonResponse({ error: "NOT_FOUND" }, 404);
     } catch (error) {
       if (error instanceof HttpError) {
-        return jsonResponse({ error: error.code, message: error.message }, error.status, {
-          "www-authenticate": error.status === 401 ? "Bearer" : undefined
-        });
+        const headers = error.status === 401 ? { "www-authenticate": "Bearer" } : {};
+        return jsonResponse({ error: error.code, message: error.message }, error.status, headers);
       }
       console.error("Worker failure", error);
       return jsonResponse({ error: "INTERNAL_ERROR", message: "Request failed." }, 500);
