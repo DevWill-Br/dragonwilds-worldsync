@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "dragonwilds-worldsync-api",
   "main": "src/index.js",
-  "compatibility_date": "2026-09-25",
+  "compatibility_date": "2026-07-14",
   "durable_objects": {
     "bindings": [
       {
