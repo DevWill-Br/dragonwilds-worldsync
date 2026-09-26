@@ -57,20 +57,23 @@ async function forward(request, env, worldId, internalPath) {
     }
   }
 
-  const internalRequest = new Request("http://worldsync.internal" + internalPath, {
-    method: request.method,
-    headers,
-    body
-  });
-  return coordinatorStub(env, worldId).fetch(internalRequest);
+  return coordinatorStub(env, worldId).fetch(
+    "http://worldsync.internal" + internalPath,
+    {
+      method: request.method,
+      headers,
+      body
+    }
+  );
 }
 
 async function downloadLatest(env, worldId) {
   const statusResponse = await coordinatorStub(env, worldId).fetch(
-    new Request("http://worldsync.internal/status", {
+    "http://worldsync.internal/status",
+    {
       method: "GET",
       headers: { "x-world-id": worldId }
-    })
+    }
   );
   if (!statusResponse.ok) return statusResponse;
 
