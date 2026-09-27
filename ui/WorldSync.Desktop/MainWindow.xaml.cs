@@ -61,7 +61,7 @@ public partial class MainWindow : Window
    case "startupBlocked":
     bridge=null;
     PrimaryButton.IsEnabled=false;SetupButton.IsEnabled=DiscoverButton.IsEnabled=AdoptButton.IsEnabled=false;
-    ShowNotice("Migração não executada. Feche a versão anterior e preserve seus dados: há sessão/registro pendente, origem ambígua ou dados que exigem revisão. Código: "+S(m,"code"));break;
+    ShowNotice("Migração não executada. Feche a versão anterior e preserve seus dados: há sessão/registro pendente, origem ambígua ou dados que exigem revisão. Código: "+S(m,"code")+(m.TryGetProperty("sources",out var sources)&&sources.ValueKind==JsonValueKind.Array?"\nOrigens em conflito:\n"+string.Join("\n",sources.EnumerateArray().Select(x=>x.GetString())):""));break;
    case "consulting":ShowConsulting();break;
    case "state":
     owned=B(m,"owned");busy=B(m,"busy");phase=S(m,"phase");

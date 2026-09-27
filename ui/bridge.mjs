@@ -35,7 +35,7 @@ export async function main(){
  }
  async function createEngine(){if(!profile||!client)throw new Error('INVALID_CLOUD_CONFIG');const io=new GameIO(profile);const files=await LocalGameFiles.create(profile,io);return new LocalGameSession({files,server:new LocalGameHost(io,{autoLaunch:profile.autoLaunch}),cloud:client});}
  const input=createInterface({input:process.stdin});
- try{await initializeUserData({core:repoRoot});}catch(e){emit({type:'startupBlocked',code:safeError(e.message)});input.close();return;}
+ try{await initializeUserData({core:repoRoot});}catch(e){emit({type:'startupBlocked',code:safeError(e.message),sources:e.message==='MIGRATION_MULTIPLE_SOURCES'?e.sources:undefined});input.close();return;}
  emit({type:'profiles',names:await profiles(),userDataRoot:userDataPaths().root});
  const ticker=setInterval(()=>{void snapshot().catch(()=>{});},750);
  const cloudTicker=setInterval(()=>{void refresh().catch(()=>{});},10000);

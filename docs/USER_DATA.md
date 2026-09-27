@@ -18,11 +18,20 @@ para atender à persistência solicitada; guards de arquivo continuam ativos.
 ## Migração
 
 Somente se a nova raiz não existir. A origem é o core antigo no mesmo local,
-versão portátil irmã, ou checkout acima de ui/artifacts. Mais de uma origem exige
-revisão; nunca há mesclagem automática. Nenhuma varredura do SaveGames é feita.
+versão portátil irmã, ou checkout acima de ui/artifacts. Fontes idênticas são deduplicadas por SHA-256. Um superset consistente vence
+uma fonte menor do mesmo perfil/worldId; nunca há mesclagem automática. Conflitos
+reais bloqueiam antes de criar destino/lock, com caminhos sanitizados. Não se usa
+timestamp para escolher. Journals divergentes também são conflitos.
+
+Segmentos tests/test/fixtures/.scratch (incluindo tests.scratch) são excluídos.
+Uma instalação portátil independente descobre somente versões irmãs; não procura
+o checkout nem seus ui/artifacts. A classificação registra perfis/worldId/save
+configurado, lifecycle/phase/revisão, backups e preferência. Esses caminhos de save
+são apenas strings: não são consultados no filesystem. Nenhuma varredura do SaveGames é feita.
 
 É feito inventário de perfis/dados internos, rejeitando links, segredos em JSON,
-locks, temporários, estados não concluídos e estado incompleto. Cópias são validadas
+locks, temporários e estados não concluídos. Estado sem journal só pode ser
+superado por uma fonte completa que contenha todos os mesmos arquivos e hashes. Cópias são validadas
 por hash em diretório temporário; o inventário da origem é conferido novamente antes
 do rename final. Origem e caminhos históricos nos journals concluídos permanecem
 intactos. A nova sessão gravará caminhos novos. Falhas preservam staging para análise.
@@ -36,15 +45,12 @@ com indicador neutro e CTA desabilitado durante a resposta inicial. Refresh peri
 continua. Host atual FREE = Nenhum; BUSY = host da sessão. Última sincronização usa
 host/data da revisão confirmada, com Não disponível quando o dado não existe.
 
-## Evidência desta rodada
+## Validação da correção
 
-- 36/36 testes Node passaram (14 específicos de persistência/migração/inicialização).
-- Testes C# passaram: seleção, preferência, perfil inválido, hosts e credenciais
-  sintéticas com prioridade/reconexão preservadas.
-- Build Release: sem erros/avisos. Smoke WPF em demonstração passou, incluindo
-  consulta inicial pendente, FREE/BUSY e última revisão.
-- Foram migrados **somente fixtures sintéticos**: perfil, último perfil, journal
-  concluído e backup interno. As cópias foram conferidas e as origens preservadas.
-- Nenhum perfil real foi migrado nesta rodada; nenhuma inicialização normal foi
-  executada. Nenhum save real foi lido ou alterado. A migração real ocorre apenas
-  na primeira abertura da nova build, se os critérios acima forem atendidos.
+23 testes de migração/persistência aprovados, incluindo duplicatas, superset,
+conflito, exclusão de fixtures e ausência de acesso aos caminhos de SaveGames.
+Suítes Node de core/cloud/UI, testes C# e 37 checks PowerShell também aprovados.
+Nenhuma migração real foi executada. A fonte portátil esperada permanece
+`C:\WorldSync\WorldSync-2.0-win-x64-20260927-025944\core`; não foi inspecionada
+ou migrada automaticamente nesta tarefa. Extraia a nova build como uma versão
+irmã em C:\WorldSync para a descoberta restrita encontrar essa origem.

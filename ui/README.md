@@ -107,8 +107,10 @@ se trata de uma build de desenvolvimento. Copia somente perfis e dados internos;
 não segue caminhos de saves registrados nos perfis/journals. Compara hashes das cópias,
 reverifica a origem e publica o diretório inteiro. A origem não é excluída.
 
-Sessão pendente, recovery, journal incompleto, arquivo lock, link perigoso ou múltiplas
-origens interrompem a migração. Não remova locks para contornar a mensagem. Pastas
+Sessão pendente, recovery, journal incompleto, arquivo lock, link perigoso ou origens
+com conteúdo conflitante interrompem a migração. Cópias idênticas são deduplicadas;
+um superset consistente do mesmo perfil/worldId vence uma fonte incompleta.
+Pastas de testes são excluídas e instalações portáteis não procuram o checkout. Não remova locks para contornar a mensagem. Pastas
 parciais `.migration-*` ficam preservadas se houver falha; o destino não é ativado.
 A origem deve estar fechada e não deve voltar a ser usada após a migração, pois versões
 antigas desconhecem o diretório compartilhado. Builds futuras usam o mesmo UserDataRoot.
