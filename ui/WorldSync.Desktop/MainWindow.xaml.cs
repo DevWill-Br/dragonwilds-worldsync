@@ -10,6 +10,7 @@ namespace WorldSync.Desktop;
 public partial class MainWindow : Window
 {
  CoreBridge? bridge;
+ CloudCredential? credential;
  bool owned,busy,allowClose,changingProfiles,restarting,demo;
  string action="",phase="idle",world="",endpoint="",gameInstall="Não verificado",server="Não observado",api="Aguardando",visual="idle";
  string sessionStatus="Não verificada";
@@ -23,7 +24,9 @@ public partial class MainWindow : Window
   Loaded+=async(_,_)=>{
    demo=Environment.GetCommandLineArgs().Contains("--demo");
    if(demo){RenderDemo();await Task.Delay(250);if(Environment.GetCommandLineArgs().Contains("--ui-test")){await UiSmoke();return;}CaptureIfRequested();return;}
-   try{StartBridge();}catch{ShowNotice("O core ou Node não foi encontrado. Extraia o pacote completo antes de abrir o app.");}
+   credential=new CloudCredential(new WindowsCredentialStore(),CloudCredential.EnvironmentToken,RestartBridge);
+   UpdateCredentialStatus();
+   try{StartBridge();}catch{ShowNotice("Não foi possível abrir a conexão ou acessar a credencial segura. Confira a instalação e o armazenamento do Windows.");}
   };
  }
  void StartBridge(string? token=null)
@@ -31,7 +34,7 @@ public partial class MainWindow : Window
   var b=new CoreBridge(CoreBridge.LocateRoot());bridge=b;
   b.Message+=m=>Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(bridge,b))Handle(m);});
   b.UnexpectedExit+=()=>Dispatcher.BeginInvoke(()=>{if(!allowClose && !restarting && ReferenceEquals(bridge,b))ShowNotice("A conexão com o supervisor terminou. Confira o estado antes de iniciar outra operação.");});
-  b.Start(token);
+  try{b.Start(token??credential?.Resolve());}catch{bridge=null;throw;}
  }
  static string S(JsonElement e,string name)=>e.TryGetProperty(name,out var v)&&v.ValueKind==JsonValueKind.String?v.GetString()??"":"";
  static bool B(JsonElement e,string name)=>e.TryGetProperty(name,out var v)&&v.ValueKind==JsonValueKind.True;
@@ -61,7 +64,7 @@ public partial class MainWindow : Window
     var v=Presentation.Map(phase,avail,owned,busy,connected);visual=v.Key;
     StateBadge.Text=v.Key switch {"free"=>"DISPONÍVEL","running"=>"VOCÊ ESTÁ HOSPEDANDO","finalizing"=>"FINALIZANDO","recovery_required"=>"RECUPERAÇÃO NECESSÁRIA","publishing"=>"SINCRONIZANDO","completed"=>"CONCLUÍDO","assuming"=>"PREPARANDO","waiting_for_game"=>"ABRA O JOGO","prepared"=>"PREPARADO","busy"=>"EM USO",_=>"INDISPONÍVEL"};StateTitle.Text=v.Title;StateDetail.Text=v.Detail;
     action=v.Action;PrimaryButton.Content=v.Cta=="ASSUMIR E JOGAR"?"ASSUMIR E INICIAR":v.Cta;PrimaryButton.IsEnabled=v.Enabled && (connected && N(c,"revision")>0);
-    Profiles.IsEnabled=!owned&&!busy;SetupButton.IsEnabled=TokenButton.IsEnabled=DiscoverButton.IsEnabled=OptionsButton.IsEnabled=!owned&&!busy;
+    Profiles.IsEnabled=!owned&&!busy;SetupButton.IsEnabled=TokenButton.IsEnabled=ReplaceTokenButton.IsEnabled=RemoveTokenButton.IsEnabled=DiscoverButton.IsEnabled=OptionsButton.IsEnabled=!owned&&!busy&&!restarting;
     AdoptButton.IsEnabled=!owned&&!busy&&connected&&N(c,"revision")==0&&avail=="free";
     if(v.Key=="busy"&&!string.IsNullOrWhiteSpace(S(c,"host")))StateTitle.Text=S(c,"host")+" está hospedando";
     RecoveryPanel.Visibility=v.Key=="recovery_required"?Visibility.Visible:Visibility.Collapsed;
@@ -86,7 +89,7 @@ public partial class MainWindow : Window
     RenderLauncherStatus(v.Key,connected);UpdateDiagnostic();CaptureIfRequested();break;
    case "checks":
     gameInstall=B(m,"installed")?"Detectado":"Não detectado";server=B(m,"gameActive")?"Jogo aberto":"Jogo fechado";
-    ChecksText.Text=$"{Check(B(m,"installed"))} Dragonwilds instalado   •   {Check(B(m,"token"))} Token no ambiente\n{server} • descoberta e adoção exigem o jogo fechado";UpdateDiagnostic();break;
+    ChecksText.Text=$"{Check(B(m,"installed"))} Dragonwilds instalado   •   {Check(B(m,"token"))} Credencial disponível\n{server} • descoberta e adoção exigem o jogo fechado";UpdateDiagnostic();break;
    case "worlds":
     SaveDirectory.Text=S(m,"root");WorldFiles.Items.Clear();
     foreach(var w in m.GetProperty("worlds").EnumerateArray())WorldFiles.Items.Add(new SaveChoice(S(w,"fileName"),S(w,"sha256"),N(w,"bytes"),S(w,"mtimeUtc")));
@@ -96,7 +99,7 @@ public partial class MainWindow : Window
    case "error":busy=false;ShowNotice(Presentation.Error(S(m,"code")));break;
    case "closeBlocked":ShowNotice("O supervisor está ativo. Conclua a finalização e sincronização antes de fechar.");break;
    case "closed":
-    if(restarting){restarting=false;StartBridge(pendingToken);pendingToken=null;}
+    if(restarting){restarting=false;var token=pendingToken;pendingToken=null;try{StartBridge(token);}catch{ShowNotice("Credencial salva; não foi possível reconectar. Reabra o app para tentar novamente.");}}
     else {allowClose=true;Close();}break;
   }
  }
@@ -211,11 +214,35 @@ public partial class MainWindow : Window
   busy=true;Send(new{action="adopt",confirmed=true,worldId=world,expectedHash=choice.Hash});
  }
  string? pendingToken;
- void TokenClick(object sender,RoutedEventArgs e){if(owned||busy)return;if(TokenInput.Password.Length<24){ShowNotice("Informe um token válido no campo protegido.");return;}pendingToken=TokenInput.Password;TokenInput.Clear();restarting=true;if(bridge==null){restarting=false;StartBridge(pendingToken);pendingToken=null;}else Send(new{action="quit"});}
+ void UpdateCredentialStatus(){
+  if(credential==null)return;
+  try{var saved=credential.IsStored;CredentialStatus.Text=saved?"Credencial configurada com segurança neste PC":"Credencial não configurada";CredentialEditor.Visibility=saved?Visibility.Collapsed:Visibility.Visible;CredentialActions.Visibility=saved?Visibility.Visible:Visibility.Collapsed;}
+  catch{CredentialStatus.Text="Armazenamento seguro indisponível";ShowNotice("Não foi possível acessar o Gerenciador de Credenciais do Windows. Nenhum detalhe sensível foi exibido.");}
+ }
+ void RestartBridge(string? token){
+  pendingToken=token;restarting=true;
+  if(bridge==null){restarting=false;pendingToken=null;StartBridge(token);}else {try{bridge.Send(new{action="quit"});}catch{restarting=false;pendingToken=null;throw new InvalidOperationException("BRIDGE_UNAVAILABLE");}}
+ }
+ void TokenClick(object sender,RoutedEventArgs e){
+  if(owned||busy||restarting)return;
+  var token=TokenInput.Password;TokenInput.Clear();
+  try{credential!.Save(token);UpdateCredentialStatus();ShowNotice("Credencial salva com segurança. Reconectando à cloud…");}
+  catch{ShowNotice("Não foi possível salvar ou reconectar. Verifique a credencial e o armazenamento seguro do Windows.");}
+ }
+ void ReplaceTokenClick(object sender,RoutedEventArgs e){if(owned||busy||restarting)return;TokenInput.Clear();CredentialEditor.Visibility=Visibility.Visible;TokenInput.Focus();}
+ void RemoveTokenClick(object sender,RoutedEventArgs e){
+  if(owned||busy||restarting||demo)return;
+  if(MessageBox.Show(this,"Remover a credencial salva neste usuário do Windows? Se WORLDSYNC_API_TOKEN estiver configurada, ela voltará a ser usada.","Remover credencial",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
+  try{credential!.Remove(true);TokenInput.Clear();UpdateCredentialStatus();ShowNotice("Credencial removida. Reconectando com a alternativa do ambiente, se configurada.");}
+  catch{ShowNotice("Não foi possível remover ou reconectar. Verifique o armazenamento seguro do Windows.");}
+ }
+
  void RecoverClick(object sender,RoutedEventArgs e)=>ShowNotice("Preserve os arquivos e a sessão para recuperação explícita. Nenhum envio foi iniciado.");
- void OnClosing(object? sender,CancelEventArgs e){if(allowClose||demo)return;e.Cancel=true;if(!Presentation.CanClose(owned,busy)){ShowNotice("Mantenha o app aberto até fechar o jogo e concluir a sincronização. O supervisor continua ativo.");return;}if(bridge==null){allowClose=true;e.Cancel=false;}else Send(new{action="quit"});}
+ void OnClosing(object? sender,CancelEventArgs e){if(allowClose||demo)return;e.Cancel=true;if(restarting){ShowNotice("Aguarde a reconexão da credencial antes de fechar.");return;}if(!Presentation.CanClose(owned,busy)){ShowNotice("Mantenha o app aberto até fechar o jogo e concluir a sincronização. O supervisor continua ativo.");return;}if(bridge==null){allowClose=true;e.Cancel=false;}else Send(new{action="quit"});}
+ sealed class DemoCredentialStore:ICredentialStore {string? value;public string? Read()=>value;public void Write(string token)=>value=token;public void Delete()=>value=null;}
  void RenderDemo()
  {
+  credential=new CloudCredential(new DemoCredentialStore(),()=>null,_=>demoCommands.Add("credential-reconnect"));UpdateCredentialStatus();
   world="Posto da Mata";endpoint="https://dragonwilds-worldsync-api.contactforwillbr.workers.dev";
   WorldName.Text=world=="worldsynctest"?"WorldSyncTest":world;revision=2;RevisionText.Text="#2";StateBadge.Text="DISPONÍVEL";StateTitle.Text="Disponível para jogar";StateDetail.Text="Tudo começa pela última revisão publicada. Seu progresso acompanha o mundo.";HostText.Text="Nenhum host";SyncText.Text="26 set • 20:36";IntegrityText.Text="Hash registrado";CloudText.Text="Cloud: disponível";
   PrimaryButton.IsEnabled=false;RenderLauncherStatus("free",true);api="Disponível (demonstração)";gameInstall="Detectado (demonstração)";UpdateDiagnostic();
@@ -246,8 +273,14 @@ public partial class MainWindow : Window
    State("idle",false,false,"free");Width=1040;Height=780;await Task.Delay(160);Require(Grid.GetRow(RightWorkspace)==1&&SummaryCards.Columns==2);Capture("compact");
    Width=1540;Height=1040;await Task.Delay(120);ShowPage("Settings");
    AdvancedProfiles.IsExpanded=true;AdvancedProfiles.BringIntoView();await Task.Delay(100);Capture("local-profiles");
+   Require(CredentialStatus.Text=="Credencial não configurada");
+   TokenInput.Password="SYNTHETIC_UI_CREDENTIAL_0123456789";TokenClick(this,new RoutedEventArgs());
+   Require(TokenInput.Password==""&&CredentialEditor.Visibility==Visibility.Collapsed&&CredentialStatus.Text=="Credencial configurada com segurança neste PC"&&demoCommands.Last()=="credential-reconnect");
+   CredentialStatus.BringIntoView();await Task.Delay(100);Capture("credential-saved");
+   ReplaceTokenClick(this,new RoutedEventArgs());Require(CredentialEditor.Visibility==Visibility.Visible&&TokenInput.Password=="");
+   Require(!credential!.Remove(false)&&credential.IsStored);credential.Remove(true);UpdateCredentialStatus();Require(CredentialEditor.Visibility==Visibility.Visible&&!credential.IsStored);
    TokenInput.Password="PRIVATE_TOKEN_SENTINEL";Require(!DiagnosticText.Text.Contains("SENTINEL"));TokenInput.BringIntoView();await Task.Delay(150);Capture("masked-token");
-   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; running cannot publish; automatic profile selection, advanced profile management; responsive layout, busy/offline honest placeholders; twelve rendered views.");
+   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; running cannot publish; automatic profile selection, advanced profile management; responsive layout, busy/offline honest placeholders; secure credential save/replace/remove UI and reconnect; thirteen rendered views.");
   }catch{File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"FAIL: UI_TEST_FAILED");Environment.ExitCode=1;}
   finally{allowClose=true;Close();}
  }

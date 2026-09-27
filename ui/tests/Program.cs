@@ -39,3 +39,6 @@ if(File.Exists(Path.Combine(repo,"src/local-game/profile.mjs"))){
   Console.WriteLine("PASS: existing core validator accepts BOM profile and excludes malformed/missing/invalid names.");
  }finally{File.Delete(goodFile);File.Delete(badFile);}
 }
+CredentialTests.Run();
+
+await CredentialTests.BridgeRoundtrip();

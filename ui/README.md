@@ -9,7 +9,9 @@ Ainda não há assinatura de código ou instalador.
 1. Termine a partida e feche completamente Dragonwilds.
 2. Em Configurações, verifique o jogo instalado e informe o token da cloud no
    campo protegido, caso não exista `WORLDSYNC_API_TOKEN` no ambiente do usuário.
-   O campo mantém o token apenas em memória; não é salvo no perfil.
+   Use **Salvar credencial com segurança** para armazená-lo no Gerenciador de
+   Credenciais do Windows (usuário atual), sem gravá-lo no perfil. Ele será
+   recuperado automaticamente nas próximas aberturas.
 3. Clique **Descobrir saves locais**. Escolha o arquivo correspondente ao mundo.
    Nome de exibição e arquivo são dados separados: a aplicação não extrai o nome
    interno do mundo. Confira arquivo, tamanho e data; se houver dúvida sobre a
@@ -74,3 +76,18 @@ dotnet run --project ui/tests/Presentation.Tests.csproj -c Release
 
 `WorldSync.exe --demo --ui-test C:\WorldSync-UiTests` renderiza telas sintéticas
 sem iniciar a ponte. Nunca use captura em modo normal para testar saves ativos.
+
+## Credencial por PC
+
+Prioridade: token informado nesta execução → Windows Credential Manager →
+`WORLDSYNC_API_TOKEN` (processo, depois ambiente do usuário). A credencial Windows
+usa o alvo `WorldSync/CloudApi/v2`; é compartilhada pelas instalações deste app
+no mesmo usuário Windows, sem acompanhar perfis ou ZIPs enviados ao PC B.
+
+Em Configurações, **Substituir credencial** abre um campo vazio protegido.
+**Remover credencial** pede confirmação e elimina a credencial salva e a escolha
+em memória desta execução. Uma variável de ambiente existente volta a ser usada;
+o app não modifica essa variável. Salvar/remover reconecta a ponte e atualiza
+status do mundo selecionado. Essas ações ficam bloqueadas durante uma sessão ativa.
+Nenhuma credencial real é lida pelos testes: eles usam um alvo Windows descartável
+`WorldSync.Tests/<guid>` e uma ponte sintética sem cloud.

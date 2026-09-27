@@ -26,13 +26,14 @@ public sealed class CoreBridge
   var p=new ProcessStartInfo(File.Exists(bundled)?bundled:"node") {WorkingDirectory=Root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
   if(File.Exists(bundled))p.Environment["PATH"]=Path.GetDirectoryName(bundled)+";"+Environment.GetEnvironmentVariable("PATH");
   p.ArgumentList.Add(Path.Combine(Root,"ui","bridge.mjs"));
-  token ??= Environment.GetEnvironmentVariable("WORLDSYNC_API_TOKEN") ?? Environment.GetEnvironmentVariable("WORLDSYNC_API_TOKEN",EnvironmentVariableTarget.User);
+  // The UI resolves explicit > Windows credential > environment. Never inherit a stale token.
+  p.Environment.Remove("WORLDSYNC_API_TOKEN");
   if(!string.IsNullOrEmpty(token))p.Environment["WORLDSYNC_API_TOKEN"]=token;
   process=new Process{StartInfo=p,EnableRaisingEvents=true};
   process.OutputDataReceived+=(_,e)=>{if(e.Data==null)return;try{using var json=JsonDocument.Parse(e.Data);Message?.Invoke(json.RootElement.Clone());}catch(JsonException){}};
   process.ErrorDataReceived+=(_,_)=>{}; // Never log raw stderr (including setup errors).
   process.Exited+=(_,_)=>UnexpectedExit?.Invoke();
-  process.Start();process.BeginOutputReadLine();process.BeginErrorReadLine();
+  process.Start();process.StartInfo.Environment.Remove("WORLDSYNC_API_TOKEN");process.BeginOutputReadLine();process.BeginErrorReadLine();
  }
  public void Send(object command)
  {
