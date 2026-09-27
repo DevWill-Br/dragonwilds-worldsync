@@ -44,7 +44,12 @@ export class LocalGameSession extends Supervisor {
  }
  async resumeCandidate(j=undefined){
   j??=await this.files.previous();
-  if(j?.phase!=='recovery_required'||j.failure!=='CLOUD_UNAVAILABLE'||!j.session||!(j.resumePhase==='running'||(!j.resumePhase&&j.gameSeen===true&&j.startedAtUtc)))throw Error('RESUME_NOT_ALLOWED');
+  const retained=j?.failure==='SESSION_RETAINED_ON_CLOSE';
+  // Old builds overwrote the original recovery reason on close. Accept only
+  // evidence of a running game; all authority/process/lock checks below still apply.
+  const running=j?.resumePhase==='running'||(!j?.resumePhase&&j?.gameSeen===true&&j?.startedAtUtc);
+  if(j?.phase!=='recovery_required'||(!retained&&j.failure!=='CLOUD_UNAVAILABLE')||!j.session||!running)throw Error('RESUME_NOT_ALLOWED');
+  if(retained&&(j.gameSeen!==true||typeof j.startedAtUtc!=='string'||!Number.isFinite(Date.parse(j.startedAtUtc))))throw Error('RESUME_NOT_ALLOWED');
   if(j.session.baseRevision<1)throw Error('RESUME_NOT_ALLOWED');
   this.validateAuthority(j,await this.cloud.status(),{stale:true});
   await this.files.resumeGuards();

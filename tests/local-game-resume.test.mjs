@@ -47,14 +47,34 @@ test('filesystem resume preserves dead-owner locks and rejects live supervisors'
  const {mkdir,writeFile,readFile,readdir}=await import('node:fs/promises');const path=await import('node:path');const {randomUUID}=await import('node:crypto');const {execFileSync}=await import('node:child_process');
  const {LocalGameFiles}=await import('../src/local-game/host.mjs');const {repoRoot}=await import('../src/lifecycle/files.mjs');
  const root=path.join(repoRoot,'tests/.scratch/local-game',randomUUID());await mkdir(root,{recursive:true});
- const profile={profile:'synthetic',saveRoot:path.join(root,'DO_NOT_CREATE_SAVES'),fileName:'synthetic.sav'};
+ const f=fixture();await f.recovery();f.s.state.failure='SESSION_RETAINED_ON_CLOSE';delete f.s.state.resumePhase;delete f.s.state.identity;
+ const profile={...f.files.profile,saveRoot:path.join(root,'DO_NOT_CREATE_SAVES'),fileName:'synthetic.sav'};
  const first=new LocalGameFiles(root,profile,{fixtureRoot:profile.saveRoot});await first.lock();
- const second=new LocalGameFiles(root,profile,{fixtureRoot:profile.saveRoot});await assert.rejects(second.resumeGuards(),/SUPERVISOR_STILL_ACTIVE/);await assert.rejects(second.resumeLock(),/SUPERVISOR_STILL_ACTIVE/);
+ const second=new LocalGameFiles(root,profile,{fixtureRoot:profile.saveRoot});await second.record(f.s.state);
+ const resumed=new LocalGameSession({files:second,cloud:f.cloud,server:f.server});resumed.beginHeartbeats=()=>{};
+ await assert.rejects(resumed.resumeCandidate(),/SUPERVISOR_STILL_ACTIVE/);
+ await assert.rejects(second.resumeGuards(),/SUPERVISOR_STILL_ACTIVE/);await assert.rejects(second.resumeLock(),/SUPERVISOR_STILL_ACTIVE/);
  await first.lockFile.close();await first.targetHandle.close();
  const dead=Number(execFileSync(process.execPath,['-e','process.stdout.write(String(process.pid))'],{windowsHide:true}));
  const guards=[second.targetLockPath(),path.join(root,'supervisor.lock')];
  for(const file of guards)await writeFile(file,JSON.stringify({profile:profile.profile,pid:dead}));
- await second.resumeLock();assert.ok(second.lockFile&&second.targetHandle);
+ assert.equal((await resumed.resumeCandidate()).failure,'SESSION_RETAINED_ON_CLOSE');
+ await resumed.resume();assert.equal(resumed.state.phase,'running');assert.equal(resumed.state.session.sessionId,'synthetic-session');
+ for(const key of ['acquire','download','install','snapshot','commit','unlock'])assert.equal(f.counts[key],0,key);
+ assert.ok(second.lockFile&&second.targetHandle);
  for(const file of guards){const archive=(await readdir(path.dirname(file))).find(n=>n.startsWith(path.basename(file)+'.')&&n.endsWith('.closed'));assert.ok(archive);assert.equal(JSON.parse(await readFile(path.join(path.dirname(file),archive))).pid,dead);}
  await second.unlock();await assert.rejects(readFile(path.join(profile.saveRoot,profile.fileName)));
 });
+
+async function retainedFixture(){const f=fixture();await f.recovery();f.s.state.failure='SESSION_RETAINED_ON_CLOSE';delete f.s.state.resumePhase;delete f.s.state.identity;await f.files.record(f.s.state);return f;}
+test('legacy retained-on-close rejects missing running evidence and arbitrary failures',async()=>{
+ for(const change of [j=>delete j.session,j=>j.gameSeen=false,j=>delete j.gameSeen,j=>delete j.startedAtUtc,j=>j.startedAtUtc='invalid',j=>j.resumePhase='publishing',j=>j.session.baseRevision=0,j=>j.failure='SESSION_LOST',j=>j.failure='ARBITRARY_FAILURE']){
+  const f=await retainedFixture();change(f.s.state);await f.files.record(f.s.state);const before=f.journal();await assert.rejects(f.s.resume());assert.deepEqual(f.journal(),before);assert.ok(Object.values(f.counts).every(n=>n===0));
+ }
+});
+test('legacy retained-on-close keeps every cloud, process and live-lock guard',async()=>{
+ for(const change of [f=>f.server.running=false,f=>f.cloud.value.session.sessionId='other',f=>f.cloud.value.currentRevision=5,f=>f.cloud.value.latest.sha256='c'.repeat(64),f=>f.cloud.value.session.baseRevision=5,f=>f.cloud.value.session.baseSha256='c'.repeat(64),f=>f.cloud.value.session.host='foreign',f=>f.cloud.value.session.machineId='foreign',f=>f.files.resumeGuards=async()=>{throw Error('SUPERVISOR_STILL_ACTIVE');}]){
+  const f=await retainedFixture();change(f);const before=f.journal();await assert.rejects(f.s.resumeCandidate());await assert.rejects(f.s.resume());assert.deepEqual(f.journal(),before);assert.ok(Object.values(f.counts).every(n=>n===0));
+ }
+});
+test('closing new build preserves legacy retained-on-close cause exactly',async()=>{const f=await retainedFixture();const before=f.journal();await f.s.close();assert.deepEqual(f.journal(),before);});

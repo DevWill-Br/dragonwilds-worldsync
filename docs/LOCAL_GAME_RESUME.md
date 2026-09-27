@@ -10,7 +10,8 @@ inválida continuam fail-closed. Não há retry cego de commit.
 
 A retomada é exclusivamente solicitada por `resume` / “Retomar sessão deste PC”.
 O botão só habilita após validação read-only de journal, cloud, processo e locks;
-a ação repete as validações. Exige recovery_required + CLOUD_UNAVAILABLE, sessão
+a ação repete as validações. Exige recovery_required + CLOUD_UNAVAILABLE (ou SESSION_RETAINED_ON_CLOSE legado
+com gameSeen=true, startedAtUtc válido e evidência de running), sessão
 preservada e execução anterior running. Journals anteriores sem resumePhase são
 aceitos somente com gameSeen=true e startedAtUtc; novos journals incluem identidade
 profile/worldId/host/machineId. O journal vem apenas da pasta do perfil selecionado.
@@ -36,3 +37,7 @@ A tarefa de implementação não executa retomada real, migração nem cloud de 
 
 Validação: mocks sem tokens reais, relógio controlado, arquivos sintéticos, processo
 Node sintético encerrado para locks, testes existentes e smoke WPF em --demo.
+
+Compatibilidade legada: SESSION_RETAINED_ON_CLOSE não dispensa nenhuma validação
+de processo, locks, perfil, posse ou base canônica. Não aceita outros failures.
+Testes com journal/locks reais de filesystem são exclusivamente sintéticos.
