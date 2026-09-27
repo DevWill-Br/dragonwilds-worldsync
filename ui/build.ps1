@@ -11,6 +11,7 @@ foreach($dir in @('src/lifecycle','src/local-game')) {
  $target=Join-Path $core $dir;New-Item -ItemType Directory -Path $target -Force | Out-Null
  Get-ChildItem -LiteralPath (Join-Path $repo $dir) -File | Where-Object Extension -in @('.mjs','.ps1') | Copy-Item -Destination $target
 }
+New-Item -ItemType Directory -Path (Join-Path $core 'ui') -Force | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'bridge.mjs') (Join-Path $core 'ui/bridge.mjs')
 New-Item -ItemType Directory -Path (Join-Path $core 'config/local-game'),(Join-Path $out 'runtime') -Force | Out-Null
 Copy-Item -LiteralPath (Get-Command node).Source -Destination (Join-Path $out 'runtime/node.exe')
