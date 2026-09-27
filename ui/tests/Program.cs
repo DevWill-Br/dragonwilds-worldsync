@@ -16,3 +16,25 @@ Check(!Presentation.Error("SECRET_SAMPLE").Contains("SECRET_SAMPLE"));
 Console.WriteLine($"PASS: {count} visual state, action, finalization and safe error checks.");
 Check(!Presentation.CanClose(true,false));Check(!Presentation.CanClose(true,true));Check(!Presentation.CanClose(false,true));Check(Presentation.CanClose(false,false));
 Console.WriteLine("PASS: closing guard preserves hosting and finalization.");
+
+Check(ProfileSelection.Choose([],"old")==null);
+Check(ProfileSelection.Choose(["pc-a"],"missing")=="pc-a");
+Check(ProfileSelection.Choose(["pc-a","pc-b"],"pc-b")=="pc-b");
+Check(ProfileSelection.Choose(["pc-b","pc-a"],"deleted")=="pc-a");
+var prefsRoot=Path.Combine(Path.GetTempPath(),"worldsync-ui-prefs-"+Guid.NewGuid());
+Check(ProfileSelection.Save(prefsRoot,"pc-b"));Check(ProfileSelection.Read(prefsRoot)=="pc-b");
+Check(!ProfileSelection.Save(prefsRoot,"../invalid"));Check(ProfileSelection.Read(prefsRoot)=="pc-b");
+Console.WriteLine("PASS: zero/single/multiple profiles, missing preference, persistence, invalid preference.");
+
+var repo=Directory.GetCurrentDirectory();
+if(File.Exists(Path.Combine(repo,"tools/host/host.mjs"))){
+ var good="ui-valid-"+Guid.NewGuid().ToString("N")[..12];var bad="ui-bad-"+Guid.NewGuid().ToString("N")[..12];
+ var goodFile=Path.Combine(repo,"config/hosts",good+".local.json");var badFile=Path.Combine(repo,"config/hosts",bad+".local.json");
+ try{
+  File.WriteAllText(goodFile,"\uFEFF"+System.Text.Json.JsonSerializer.Serialize(new{profile=good,worldId="test",cloudUrl="https://example.com",installPath=repo,labPath=repo,wsbPath=Path.Combine(repo,"test.exe"),wsbFile=Path.Combine(repo,"test.wsb"),machineId=Guid.NewGuid().ToString()}));
+  File.WriteAllText(badFile,"{invalid");
+  var valid=await ProfileSelection.Validate(repo,[good,bad,"missing-profile","../escape"]);
+  Check(valid.SequenceEqual(new[]{good}));
+  Console.WriteLine("PASS: existing core validator accepts BOM profile and excludes malformed/missing/invalid names.");
+ }finally{File.Delete(goodFile);File.Delete(badFile);}
+}

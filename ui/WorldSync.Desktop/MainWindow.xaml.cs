@@ -43,17 +43,16 @@ public partial class MainWindow : Window
   switch(S(m,"type"))
   {
    case "profiles":
-    var selected=Profiles.SelectedItem as string;changingProfiles=true;Profiles.Items.Clear();
-    foreach(var n in m.GetProperty("names").EnumerateArray())Profiles.Items.Add(n.GetString());
-    changingProfiles=false;
-    if(Profiles.Items.Count>0)Profiles.SelectedItem=selected!=null&&Profiles.Items.Contains(selected)?selected:Profiles.Items[0];
-    else {ShowPage("Settings");SetupTitle.Text="Bem-vindo. Vamos preparar este PC.";Send(new{action="inspect"});}
+    _=LoadProfiles(m.GetProperty("names").EnumerateArray().Select(n=>n.GetString()!).ToArray());
     break;
    case "profile":
+    confirmedProfile=S(m,"profile");
+    var remembered=demo || bridge==null || ProfileSelection.Save(bridge.Root,confirmedProfile);
+    changingProfiles=true;if(Profiles.Items.Contains(confirmedProfile))Profiles.SelectedItem=confirmedProfile;changingProfiles=false;
     world=S(m,"worldId");WorldName.Text=world=="worldsynctest"?"WorldSyncTest":world;endpoint=S(m,"endpoint");EndpointInput.Text=endpoint;
     ProfileInput.Text=S(m,"profile");WorldInput.Text=world;LabInput.Text=S(m,"labPath");InstallInput.Text=S(m,"installPath");
     HostOptions.Text="Host: "+S(m,"host")+" • instalação somente leitura • rede do Sandbox habilitada";
-    Notice.Visibility=Visibility.Collapsed;Send(new{action="inspect"});break;
+    Notice.Visibility=Visibility.Collapsed;if(!remembered)ShowNotice("O perfil foi selecionado, mas não foi possível lembrar esta escolha neste PC.");Send(new{action="inspect"});break;
    case "state":
     owned=B(m,"owned");busy=B(m,"busy");phase=S(m,"phase");
     var connected=m.TryGetProperty("cloud",out var c)&&c.ValueKind==JsonValueKind.Object;
@@ -94,6 +93,22 @@ public partial class MainWindow : Window
     if(restarting){restarting=false;StartBridge(pendingToken);pendingToken=null;}
     else {allowClose=true;Close();}break;
   }
+ }
+ string? confirmedProfile;
+ int profilesLoadVersion;
+ async Task LoadProfiles(string[] candidates)
+ {
+  var version=++profilesLoadVersion;var currentBridge=bridge;
+  try {
+   var valid=demo?candidates:await ProfileSelection.Validate(currentBridge!.Root,candidates);
+   if(version!=profilesLoadVersion || !ReferenceEquals(currentBridge,bridge))return;
+   var last=confirmedProfile??(demo?null:ProfileSelection.Read(currentBridge!.Root));
+   var chosen=ProfileSelection.Choose(valid,last);
+   changingProfiles=true;Profiles.Items.Clear();foreach(var name in valid)Profiles.Items.Add(name);Profiles.SelectedItem=chosen;changingProfiles=false;
+   ProfilesHint.Text=valid.Length switch {0=>"Nenhum perfil válido. Prepare este PC no setup abaixo.",1=>"Este é o perfil padrão deste PC. A seleção é automática.",_=>"A última escolha é lembrada. Troque aqui quando necessário, com o supervisor parado."};
+   if(chosen!=null){SetupTitle.Text="Configurações do host";if(!owned&&!busy)Send(new{action="select",profile=chosen});}
+   else {ShowPage("Settings");SetupTitle.Text="Bem-vindo. Vamos preparar este PC.";Send(new{action="inspect"});}
+  }catch{ShowNotice("Não foi possível verificar os perfis locais. Confira a instalação do app; nenhum perfil foi modificado.");}
  }
  static string Check(bool value)=>value?"✓":"○";
  static string LocalTime(string utc)=>DateTimeOffset.TryParse(utc,out var d)?d.ToLocalTime().ToString("dd MMM • HH:mm"):"—";
@@ -174,15 +189,20 @@ public partial class MainWindow : Window
   }
   void Capture(string name){UpdateLayout();var bitmap=new RenderTargetBitmap((int)ActualWidth,(int)ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(this);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var stream=File.Create(Path.Combine(dir,name+".png"));encoder.Save(stream);}
   try{
+   await LoadProfiles([]);Require(SettingsPage.Visibility==Visibility.Visible);
+   await LoadProfiles(["pc-a"]);Require(Profiles.SelectedItem?.ToString()=="pc-a");
+   confirmedProfile="pc-b";await LoadProfiles(["pc-a","pc-b"]);Require(Profiles.SelectedItem?.ToString()=="pc-b");
+   ShowPage("Home");
    State("idle",false,false,"free");Require(PrimaryButton.IsEnabled);PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("running",true,false);Require(PrimaryButton.IsEnabled&&action=="stop");await Task.Delay(80);Capture("running");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("stop"));
    State("finalizing",true,true);Require(!PrimaryButton.IsEnabled&&Steps.Items.Count==6);ShowPage("Home");await Task.Delay(100);Capture("finalizing");
    State("recovery_required",false,false,"recovery_required");Require(RecoveryPanel.Visibility==Visibility.Visible&&!RecoverButton.IsEnabled);Capture("recovery");
    State("completed",false,false,"free");
    foreach(var page in new[]{"Home","History","Diagnostics","Settings"}){ShowPage(page);await Task.Delay(80);Capture(page.ToLowerInvariant());}
+   AdvancedProfiles.IsExpanded=true;AdvancedProfiles.BringIntoView();await Task.Delay(100);Capture("local-profiles");
    OwnerInput.Password="PRIVATE_OWNER_SENTINEL";AdminInput.Password="PRIVATE_ADMIN_SENTINEL";WorldPasswordInput.Password="PRIVATE_WORLD_SENTINEL";
    Require(!DiagnosticText.Text.Contains("SENTINEL"));OwnerInput.BringIntoView();await Task.Delay(150);Capture("masked-credentials");
-   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; eight rendered views.");
+   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; automatic profile selection, advanced profile management; nine rendered views.");
   }catch{File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"FAIL: UI_TEST_FAILED");Environment.ExitCode=1;}
   finally{allowClose=true;Close();}
  }
