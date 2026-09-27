@@ -4,4 +4,5 @@
   <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>WorldSync</AssemblyName>
   <ApplicationManifest>app.manifest</ApplicationManifest>
  </PropertyGroup>
+ <ItemGroup><Resource Include="Assets/worldsync-hero.png" /></ItemGroup>
 </Project>

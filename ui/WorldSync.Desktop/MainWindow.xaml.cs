@@ -60,7 +60,7 @@ public partial class MainWindow : Window
     sessionStatus=avail switch {"free"=>"Livre","busy"=>"Hospedando","committing"=>"Publicando","recovery_required"=>"Recuperação necessária",_=>"Não verificada"};
     var v=Presentation.Map(phase,avail,owned,busy,connected);visual=v.Key;
     StateBadge.Text=v.Key switch {"free"=>"DISPONÍVEL","running"=>"VOCÊ ESTÁ HOSPEDANDO","finalizing"=>"FINALIZANDO","recovery_required"=>"RECUPERAÇÃO NECESSÁRIA","publishing"=>"SINCRONIZANDO","completed"=>"CONCLUÍDO","assuming"=>"PREPARANDO","waiting_for_game"=>"ABRA O JOGO","prepared"=>"PREPARADO","busy"=>"EM USO",_=>"INDISPONÍVEL"};StateTitle.Text=v.Title;StateDetail.Text=v.Detail;
-    action=v.Action;PrimaryButton.Content=v.Cta;PrimaryButton.IsEnabled=v.Enabled && (connected && N(c,"revision")>0);
+    action=v.Action;PrimaryButton.Content=v.Cta=="ASSUMIR E JOGAR"?"ASSUMIR E INICIAR":v.Cta;PrimaryButton.IsEnabled=v.Enabled && (connected && N(c,"revision")>0);
     Profiles.IsEnabled=!owned&&!busy;SetupButton.IsEnabled=TokenButton.IsEnabled=DiscoverButton.IsEnabled=OptionsButton.IsEnabled=!owned&&!busy;
     AdoptButton.IsEnabled=!owned&&!busy&&connected&&N(c,"revision")==0&&avail=="free";
     if(v.Key=="busy"&&!string.IsNullOrWhiteSpace(S(c,"host")))StateTitle.Text=S(c,"host")+" está hospedando";
@@ -73,13 +73,14 @@ public partial class MainWindow : Window
     if(connected){
      revision=N(c,"revision");RevisionText.Text="#"+revision;
      HostText.Text=avail=="free"?"Nenhum host":S(c,"host");
-     IntegrityText.Text=revision>0?"SHA-256 canônico registrado":"Sem revisão publicada";
+     IntegrityText.Text=revision>0?"Hash registrado":"Sem revisão";
      if(c.TryGetProperty("latest",out var l)&&l.ValueKind==JsonValueKind.Object){
       var time=S(l,"time");SyncText.Text=LocalTime(time);
       var row=new RevisionRow(world,endpoint,N(l,"revision"),time,S(l,"host"),S(l,"hash"));
       history[$"{endpoint}|{world}|{row.Revision}"]=row;RenderHistory();
      }
     }
+    if(!connected){RevisionText.Text="—";HostText.Text="Não verificado";IntegrityText.Text="Não verificada";SyncText.Text="—";}
     if(!string.IsNullOrEmpty(S(m,"error")))ShowNotice(Presentation.Error(S(m,"error")));
 
     RenderLauncherStatus(v.Key,connected);UpdateDiagnostic();CaptureIfRequested();break;
@@ -122,15 +123,21 @@ public partial class MainWindow : Window
  void RenderLauncherStatus(string key,bool connected)
  {
   var attention=key is "recovery_required" or "error";
-  StateBadge.Foreground=new SolidColorBrush(attention?Color.FromRgb(240,192,116):Color.FromRgb(85,224,188));
-  StatusSurface.Background=new SolidColorBrush(attention?Color.FromRgb(65,47,28):Color.FromRgb(25,61,48));
-  StatusSurface.BorderBrush=new SolidColorBrush(attention?Color.FromRgb(131,99,51):Color.FromRgb(50,110,83));
+  StateBadge.Foreground=new SolidColorBrush(attention?Color.FromRgb(240,192,116):Color.FromRgb(36,230,194));
+  StatusSurface.Background=new SolidColorBrush(attention?Color.FromRgb(65,47,28):Color.FromRgb(5,62,53));
+  StatusSurface.BorderBrush=new SolidColorBrush(attention?Color.FromRgb(131,99,51):Color.FromRgb(42,171,133));
   PrimaryButton.Tag=key=="running"?"■":key is "finalizing" or "publishing"?"◷":"▶";
   ApiHealth.Text=connected?"●  Saudável":"○  Indisponível";
-  ApiHealth.Foreground=new SolidColorBrush(connected?Color.FromRgb(85,224,188):Color.FromRgb(173,158,137));
+  ApiHealth.Foreground=new SolidColorBrush(connected?Color.FromRgb(36,230,194):Color.FromRgb(173,158,137));
   CloudSession.Text=sessionStatus;
   RunningPanel.Visibility=key=="running"?Visibility.Visible:Visibility.Collapsed;
-  FlowSurface.Visibility=key=="running"?Visibility.Collapsed:Visibility.Visible;
+  FlowSurface.Visibility=Visibility.Visible;
+  SummaryAvailability.Text=connected?sessionStatus:"Não verificada";
+  SummaryCanonical.Text=connected&&revision>0?"Hash registrado":"Não verificado";
+  SummaryDiagnostic.Text=key=="recovery_required"?"Recuperação necessária":key=="error"?"Verificar conexão":"Consulte Diagnóstico";
+  var activeStep=key switch {"assuming"=>1,"prepared" or "waiting_for_game"=>2,"running"=>3,"finalizing" or "publishing"=>4,_=>0};
+  var circles=new[]{FlowStep1,FlowStep2,FlowStep3,FlowStep4};
+  for(var n=0;n<circles.Length;n++)circles[n].BorderBrush=(Brush)FindResource(n+1==activeStep?"Teal":"TextTertiary");
   if(key=="running"){
    runningObservedSince??=DateTimeOffset.UtcNow;
    var elapsed=DateTimeOffset.UtcNow-runningObservedSince.Value;
@@ -139,11 +146,11 @@ public partial class MainWindow : Window
  }
  void RenderSteps(int step)
  {
-  Steps.Items.Clear();SummaryCards.Visibility=step>=0&&step<5?Visibility.Collapsed:Visibility.Visible;
+  Steps.Items.Clear();SummaryCards.Visibility=Visibility.Visible;
   var finalizing=step>=0&&step<5;
   Journey.Visibility=finalizing?Visibility.Collapsed:Visibility.Visible;
   Steps.Visibility=finalizing?Visibility.Visible:Visibility.Collapsed;
-  FlowTitle.Text=finalizing?"Finalização segura":step==5?"Sua aventura está sincronizada":"Da última aventura à próxima";
+  FlowTitle.Text=finalizing?"Finalização segura":"Próximo fluxo";
   FlowSummary.Text=finalizing?"Etapas confirmadas pelo core":step==5?"Revisão confirmada • sessão liberada":"Um mundo contínuo, quatro passos.";
   if(step<0)return;
   for(int i=0;i<stepNames.Length;i++){
@@ -153,7 +160,7 @@ public partial class MainWindow : Window
     BorderBrush=new SolidColorBrush(current?Color.FromRgb(64,150,114):Color.FromRgb(36,51,59)),
     BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(9),Padding=new Thickness(12,13,12,13),Margin=new Thickness(0,4,10,4),
     Child=new TextBlock{Text=(i<step||step==5?"✓  ":current?"●  ":"○  ")+stepNames[i],FontSize=12,FontWeight=current?FontWeights.SemiBold:FontWeights.Normal,
-     Foreground=new SolidColorBrush(i<=step?Color.FromRgb(85,224,188):Color.FromRgb(133,153,165))}
+     Foreground=new SolidColorBrush(i<=step?Color.FromRgb(36,230,194):Color.FromRgb(133,153,165))}
    });
   }
  }
@@ -165,8 +172,26 @@ public partial class MainWindow : Window
  }
  void UpdateDiagnostic()=>DiagnosticText.Text=Presentation.Diagnostic(world,revision,visual,api,gameInstall,server,endpoint,sessionStatus);
  void ShowNotice(string text){NoticeText.Text=text;Notice.Visibility=Visibility.Visible;}
+ void LayoutChanged(object sender,SizeChangedEventArgs e){
+  if(WorkspaceGrid==null)return;
+  var compact=ActualWidth<1250;
+  SidebarWidth.Width=new GridLength(compact?210:252);
+  SummaryCards.Columns=compact?2:4;
+  LeftWorkspaceColumn.Width=new GridLength(compact?1:1.22,GridUnitType.Star);
+  WorkspaceGap.Width=new GridLength(compact?0:18);
+  RightWorkspaceColumn.Width=new GridLength(compact?0:0.95,GridUnitType.Star);
+  Grid.SetColumn(RightWorkspace,compact?0:2);Grid.SetRow(RightWorkspace,compact?1:0);
+  var narrow=ActualWidth<1000;
+  HeroStatusColumn.Width=new GridLength(narrow?0:compact?240:300);
+  Grid.SetColumn(StatusSurface,narrow?0:1);Grid.SetRow(StatusSurface,narrow?1:0);
+  StatusSurface.Margin=narrow?new Thickness(0,14,0,0):new Thickness(0);
+  StatusSurface.HorizontalAlignment=narrow?HorizontalAlignment.Left:HorizontalAlignment.Stretch;
+  StatusSurface.MinWidth=narrow?280:0;WorldName.FontSize=compact?34:48;BrandName.FontSize=compact?18:22;StateBadge.FontSize=compact?20:23;
+  WorldOrb.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
+  WorldOrb.Width=WorldOrb.Height=compact?64:82;
+ }
  void Navigate(object sender,RoutedEventArgs e)=>ShowPage((sender as Button)?.Tag?.ToString()??"Home");
- void ShowPage(string name){foreach(var button in ((StackPanel)NavHome.Parent).Children.OfType<Button>())button.Background=new SolidColorBrush(button.Tag?.ToString()==name?Color.FromRgb(33,59,59):Colors.Transparent);HomePage.Visibility=name=="Home"?Visibility.Visible:Visibility.Collapsed;HistoryPage.Visibility=name=="History"?Visibility.Visible:Visibility.Collapsed;DiagnosticsPage.Visibility=name=="Diagnostics"?Visibility.Visible:Visibility.Collapsed;SettingsPage.Visibility=name=="Settings"?Visibility.Visible:Visibility.Collapsed;}
+ void ShowPage(string name){foreach(var button in ((StackPanel)NavHome.Parent).Children.OfType<Button>()){var selected=button.Tag?.ToString()==name;button.Background=new SolidColorBrush(selected?Color.FromRgb(15,53,49):Colors.Transparent);button.FontWeight=selected?FontWeights.Bold:FontWeights.Normal;}HomePage.Visibility=name=="Home"?Visibility.Visible:Visibility.Collapsed;HistoryPage.Visibility=name=="History"?Visibility.Visible:Visibility.Collapsed;DiagnosticsPage.Visibility=name=="Diagnostics"?Visibility.Visible:Visibility.Collapsed;SettingsPage.Visibility=name=="Settings"?Visibility.Visible:Visibility.Collapsed;}
  void ProfileChanged(object sender,SelectionChangedEventArgs e){if(!changingProfiles && Profiles.SelectedItem is string name)Send(new{action="select",profile=name});}
  void RefreshClick(object sender,RoutedEventArgs e)=>Send(new{action="refresh"});
  void PrimaryClick(object sender,RoutedEventArgs e){if(!PrimaryButton.IsEnabled||action=="")return;PrimaryButton.IsEnabled=false;busy=true;Send(new{action});}
@@ -192,8 +217,8 @@ public partial class MainWindow : Window
  void RenderDemo()
  {
   world="Posto da Mata";endpoint="https://dragonwilds-worldsync-api.contactforwillbr.workers.dev";
-  WorldName.Text=world=="worldsynctest"?"WorldSyncTest":world;revision=2;RevisionText.Text="#2";StateBadge.Text="DISPONÍVEL";StateTitle.Text="Disponível para jogar";StateDetail.Text="Tudo começa pela última revisão publicada. Seu progresso acompanha o mundo.";HostText.Text="Nenhum host";SyncText.Text="26 set • 20:36";IntegrityText.Text="SHA-256 canônico registrado";CloudText.Text="Cloud: disponível";
-  PrimaryButton.IsEnabled=false;api="Disponível (demonstração)";gameInstall="Detectado (demonstração)";UpdateDiagnostic();
+  WorldName.Text=world=="worldsynctest"?"WorldSyncTest":world;revision=2;RevisionText.Text="#2";StateBadge.Text="DISPONÍVEL";StateTitle.Text="Disponível para jogar";StateDetail.Text="Tudo começa pela última revisão publicada. Seu progresso acompanha o mundo.";HostText.Text="Nenhum host";SyncText.Text="26 set • 20:36";IntegrityText.Text="Hash registrado";CloudText.Text="Cloud: disponível";
+  PrimaryButton.IsEnabled=false;RenderLauncherStatus("free",true);api="Disponível (demonstração)";gameInstall="Detectado (demonstração)";UpdateDiagnostic();
   history["demo"]=new(world,endpoint,2,"2026-09-26T23:36:00Z","PC A","fcb496ed002ff468706e891d1b6c37ff2178d845fa23e9d6ed79056cc113aa73");RenderHistory();
  }
  async Task UiSmoke()
@@ -209,15 +234,20 @@ public partial class MainWindow : Window
    await LoadProfiles(["pc-a"]);Require(Profiles.SelectedItem?.ToString()=="pc-a");
    confirmedProfile="pc-b";await LoadProfiles(["pc-a","pc-b"]);Require(Profiles.SelectedItem?.ToString()=="pc-b");
    ShowPage("Home");
-   State("idle",false,false,"free");Require(PrimaryButton.IsEnabled);PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
+   State("idle",false,false,"free");Require(PrimaryButton.IsEnabled&&PrimaryButton.Content.ToString()=="ASSUMIR E INICIAR");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("running",true,false);Require(!PrimaryButton.IsEnabled&&action=="");await Task.Delay(80);Capture("running");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("finalizing",true,true);Require(!PrimaryButton.IsEnabled&&Steps.Items.Count==6);ShowPage("Home");await Task.Delay(100);Capture("finalizing");
    State("recovery_required",false,false,"recovery_required");Require(RecoveryPanel.Visibility==Visibility.Visible&&!RecoverButton.IsEnabled);Capture("recovery");
    State("completed",false,false,"free");
    foreach(var page in new[]{"Home","History","Diagnostics","Settings"}){ShowPage(page);await Task.Delay(80);Capture(page.ToLowerInvariant());}
+   ShowPage("Home");State("idle",false,false,"busy");Require(!PrimaryButton.IsEnabled);Capture("other-host");
+   using(var disconnected=JsonDocument.Parse("{\"type\":\"state\",\"phase\":\"idle\",\"owned\":false,\"busy\":false,\"cloud\":null}"))Handle(disconnected.RootElement);
+   Require(!PrimaryButton.IsEnabled&&SummaryCanonical.Text=="Não verificado");Capture("offline");
+   State("idle",false,false,"free");Width=1040;Height=780;await Task.Delay(160);Require(Grid.GetRow(RightWorkspace)==1&&SummaryCards.Columns==2);Capture("compact");
+   Width=1540;Height=1040;await Task.Delay(120);ShowPage("Settings");
    AdvancedProfiles.IsExpanded=true;AdvancedProfiles.BringIntoView();await Task.Delay(100);Capture("local-profiles");
    TokenInput.Password="PRIVATE_TOKEN_SENTINEL";Require(!DiagnosticText.Text.Contains("SENTINEL"));TokenInput.BringIntoView();await Task.Delay(150);Capture("masked-token");
-   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; running cannot publish; automatic profile selection, advanced profile management; nine rendered views.");
+   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; running cannot publish; automatic profile selection, advanced profile management; responsive layout, busy/offline honest placeholders; twelve rendered views.");
   }catch{File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"FAIL: UI_TEST_FAILED");Environment.ExitCode=1;}
   finally{allowClose=true;Close();}
  }
