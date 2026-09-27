@@ -9,3 +9,6 @@ cloud/node_modules/
 cloud/.wrangler/
 .wrangler/
 cloud/.dev.vars
+ui/**/bin/
+ui/**/obj/
+ui/artifacts/
