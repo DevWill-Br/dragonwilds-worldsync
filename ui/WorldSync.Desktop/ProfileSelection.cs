@@ -25,7 +25,7 @@ public static class ProfileSelection
   var bundled=System.IO.Path.Combine(AppContext.BaseDirectory,"runtime","node.exe");
   var start=new ProcessStartInfo(System.IO.File.Exists(bundled)?bundled:"node"){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
   start.ArgumentList.Add("--input-type=module");start.ArgumentList.Add("-e");
-  start.ArgumentList.Add("import {readFile} from 'node:fs/promises';import {validateProfile} from './tools/host/host.mjs';let input='';for await(const c of process.stdin)input+=c;const valid=[];for(const n of JSON.parse(input)){if(!/^[a-z0-9-]{1,40}$/.test(n))continue;try{validateProfile(JSON.parse((await readFile('config/hosts/'+n+'.local.json','utf8')).replace(/^\\uFEFF/,'')));valid.push(n);}catch{}}console.log(JSON.stringify(valid));");
+  start.ArgumentList.Add("import {readFile} from 'node:fs/promises';import {validateProfile} from './src/local-game/profile.mjs';let input='';for await(const c of process.stdin)input+=c;const valid=[];for(const n of JSON.parse(input)){if(!/^[a-z0-9-]{1,40}$/.test(n))continue;try{validateProfile(JSON.parse((await readFile('config/local-game/'+n+'.local.json','utf8')).replace(/^\\uFEFF/,'')));valid.push(n);}catch{}}console.log(JSON.stringify(valid));");
   using var process=new Process{StartInfo=start};process.Start();
   var output=process.StandardOutput.ReadToEndAsync();var errors=process.StandardError.ReadToEndAsync();
   await process.StandardInput.WriteAsync(JsonSerializer.Serialize(candidates));process.StandardInput.Close();

@@ -1,38 +1,35 @@
-using System.Text.Json;
 namespace WorldSync.Desktop;
-public record VisualState(string Key, string Title, string Detail, string Cta, string Action, bool Enabled, int Step);
-public static class Presentation
-{
+public record VisualState(string Key,string Title,string Detail,string Cta,string Action,bool Enabled,int Step);
+public static class Presentation {
  public static bool CanClose(bool owned,bool busy)=>!owned&&!busy;
- public static VisualState Map(string phase, string availability, bool owned, bool busy, bool connected)
- {
-  if(phase=="recovery_required" || availability=="recovery_required" || (!owned && !busy && phase is not "idle" and not "completed")) return new("recovery_required","Recuperação necessária","O progresso foi preservado. Nenhuma sessão será tomada automaticamente.","RECUPERAÇÃO NECESSÁRIA","",false,-1);
-  if(owned || busy)
-  {
-   return phase switch {
-    "completed" => new("completed","Progresso sincronizado","Concluindo o supervisor em background.","CONCLUÍDO","",false,5),
-    "running" => new("running","Você está hospedando","Ao terminar, aguarde o autosave e a confirmação da sincronização.","ENCERRAR E SINCRONIZAR","stop",!busy,-1),
-    "prepared" => new("prepared","Mundo preparado","A revisão canônica foi baixada e verificada pelo core.","INICIAR SERVIDOR","start",!busy,-1),
-    "finalizing" => new("finalizing","Finalizando com segurança","Aguardando o próximo autosave confirmado. Mantenha o app aberto.","AGUARDANDO AUTOSAVE","",false,0),
-    "stopping" => new("finalizing","Encerrando servidor","Autosave confirmado. Aguardando o encerramento do processo.","ENCERRANDO SERVIDOR","",false,2),
-    "stopped" => new("prepared","Servidor encerrado","O core verificará o snapshot antes de publicar a revisão.","SINCRONIZAR REVISÃO","publish",!busy,3),
-    "publishing" => new("publishing","Sincronizando revisão","A sessão só será liberada depois da confirmação da cloud.","PUBLICANDO REVISÃO","",false,4),
-    _ => new("assuming","Preparando seu mundo","Validando a sessão, o ambiente isolado e a revisão canônica.","ASSUMINDO E INICIANDO","",false,-1)
-   };
-  }
-  if(!connected)return new("error","Cloud indisponível","Verifique a conexão e a credencial local. Nenhuma ação será iniciada.","ASSUMIR E INICIAR","start",false,-1);
-  if(availability!="free")return new("busy","Mundo em uso","Outro host mantém a sessão. Aguarde a publicação e liberação.","EM USO POR OUTRO HOST","",false,-1);
-  return new("free","Disponível para jogar","Tudo começa pela última revisão publicada. Seu progresso acompanha o mundo.","ASSUMIR E INICIAR","start",!busy,phase=="completed"?5:-1);
+ public static VisualState Map(string phase,string availability,bool owned,bool busy,bool connected){
+  if(phase=="recovery_required"||availability=="recovery_required"||(!owned&&!busy&&phase is not "idle" and not "completed"))return new("recovery_required","Recuperação necessária","Save, backups e sessão preservados. Não inicie outra sessão.","RECUPERAÇÃO NECESSÁRIA","",false,-1);
+  if(owned||busy)return phase switch {
+   "running"=>new("running","Você está hospedando","Selecione e hospede o mundo dentro do jogo. Ao terminar, feche Dragonwilds; a sincronização será automática.","FECHE O JOGO PARA SINCRONIZAR","",false,-1),
+   "waiting_for_game"=>new("waiting_for_game","Aguardando Dragonwilds","Abra o jogo e selecione o mundo preparado. Mantenha WorldSync aberto.","AGUARDANDO O JOGO","",false,-1),
+   "finalizing"=>new("finalizing","Sincronizando progresso…","O jogo encerrou. Aguardando o arquivo estabilizar e verificando a leitura exclusiva.","VERIFICANDO SAVE","",false,0),
+   "stopped"=>new("finalizing","Sincronizando progresso…","Preparando o snapshot verificado e o backup.","PREPARANDO SNAPSHOT","",false,2),
+   "publishing"=>new("publishing","Sincronizando progresso…","A sessão será liberada somente após confirmar a revisão na cloud.","PUBLICANDO REVISÃO","",false,4),
+   "completed"=>new("completed","Progresso sincronizado","Revisão confirmada na cloud.","CONCLUÍDO","",false,5),
+   _=>new("assuming","Preparando seu mundo","Adquirindo sessão, verificando a revisão e preservando backup local.","PREPARANDO O MUNDO","",false,-1)
+  };
+  if(!connected)return new("error","Cloud indisponível","Verifique a conexão e a credencial local.","ASSUMIR E JOGAR","start",false,-1);
+  if(availability!="free")return new("busy","Outro PC está hospedando","Aguarde a sincronização e liberação. Nenhum save local será alterado.","MUNDO EM USO","",false,-1);
+  return new("free",phase=="completed"?"Progresso sincronizado":"Disponível para jogar","Continue da última revisão publicada. Hospede normalmente pelo multiplayer do jogo.","ASSUMIR E JOGAR","start",true,phase=="completed"?5:-1);
  }
  public static string Error(string code)=>code switch {
-  "INVALID_CLOUD_CONFIG" or "UNAUTHORIZED" => "A credencial da cloud está ausente ou não foi aceita. Configure o token local.",
-  "WS_SERVER_ACTIVE" or "SERVER_ACTIVE" => "Um servidor ou marcador de escrita está ativo. O save foi protegido.",
-  "CLOUD_UNAVAILABLE" => "Não foi possível alcançar a cloud. Verifique a conexão.",
-  "RECOVERY_REQUIRED" or "LOCAL_RECOVERY_REQUIRED" or "LAB_LOCKED_RECOVERY_REQUIRED" => "É necessária uma recuperação explícita. Preserve o laboratório e os registros.",
-  "COMMIT_UNCONFIRMED" => "A publicação ainda não foi confirmada. Não repita o envio; preserve a sessão para recuperação.",
-  "UNCONFIRMED_SAVE_CHANGE" or "DOWNLOAD_INTEGRITY_FAILED" or "STAGING_INTEGRITY_FAILED" => "A verificação de integridade bloqueou a operação. O progresso local foi preservado.",
-  _ => "A operação não foi concluída. Consulte o diagnóstico; nenhum detalhe sensível foi exibido."
+  "WS_GAME_ACTIVE"=>"Feche completamente Dragonwilds antes desta operação. Nenhum save será instalado ou publicado com o jogo aberto.",
+  "WORLD_BUSY"=>"Outro PC está hospedando este mundo. Aguarde a liberação.",
+  "ADOPTION_REQUIRED"=>"Este mundo ainda não tem uma revisão. Use Adicionar mundo existente no primeiro PC.",
+  "WORLD_ALREADY_EXISTS"=>"Este mundo já existe na cloud. Use Assumir e jogar; a adoção não substitui revisões.",
+  "WS_SAVE_DIRECTORY_MISSING"=>"O diretório de saves conhecido não foi encontrado. Abra o jogo normalmente para preparar seu perfil e feche-o antes do setup.",
+  "INVALID_CLOUD_CONFIG" or "UNAUTHORIZED"=>"Configure uma credencial válida para a cloud.",
+  "CLOUD_UNAVAILABLE"=>"Não foi possível alcançar a cloud. Verifique a conexão.",
+  "GAME_START_TIMEOUT"=>"O jogo não foi observado iniciando. A sessão permanece reservada para recuperação.",
+  "LOCAL_RECOVERY_REQUIRED" or "RECOVERY_REQUIRED" or "SESSION_LOST"=>"É necessária recuperação explícita. Preserve os saves, backups e registros locais.",
+  "COMMIT_UNCONFIRMED"=>"Publicação não confirmada. Preserve a sessão; não repita o envio manualmente.",
+  "ADOPTION_FILE_CHANGED" or "DOWNLOAD_INTEGRITY_FAILED" or "UNCONFIRMED_SAVE_CHANGE"=>"O arquivo não corresponde ao hash esperado. A operação foi bloqueada e o progresso preservado.",
+  _=>"A operação foi bloqueada. Preserve os arquivos e consulte o diagnóstico. Nenhum detalhe sensível foi exibido."
  };
- public static string Diagnostic(string world,int revision,string visual,string cloud,string sandbox,string server,string endpoint,string session="Não verificada")
-  => $"WorldSync 2.0\nMundo: {world}\nRevisão: {revision}\nEstado: {visual}\nAPI: {cloud}\nSessão: {session}\nR2: sem verificação independente\nSandbox: {sandbox}\nServidor: {server}\nEndpoint: {endpoint}\nDiagnóstico sem credenciais, sessões completas ou logs brutos.";
+ public static string Diagnostic(string world,int revision,string visual,string cloud,string game,string process,string endpoint,string session="Não verificada")=>$"WorldSync 2.0 / LocalGameHost\nMundo: {world}\nRevisão: {revision}\nEstado: {visual}\nAPI: {cloud}\nSessão: {session}\nR2: sem verificação independente\nJogo instalado: {game}\nProcesso: {process}\nEndpoint: {endpoint}\nDiagnóstico sem credenciais ou logs brutos.";
 }

@@ -1,80 +1,76 @@
-# WorldSync 2.0 — primeira UI funcional
+# WorldSync 2.0 — jogo local
 
-## Abrir
+Extraia **todo** o ZIP em uma pasta gravável, como `C:\WorldSync`, e abra
+`WorldSync.exe`. O pacote inclui .NET e Node; não requer npm ou Wrangler.
+Ainda não há assinatura de código ou instalador.
 
-Extraia **todo** o ZIP em uma pasta gravável, por exemplo `C:\WorldSync`.
-Abra `WorldSync.exe`. Não execute de dentro do ZIP. O pacote inclui .NET e a
-mesma versão de Node usada no build; não precisa instalar npm ou Wrangler.
-O aplicativo ainda não tem assinatura de código/instalador.
+## Primeiro PC: adicionar mundo existente
 
-No PC que já tem este repositório configurado, use a build local ou:
+1. Termine a partida e feche completamente Dragonwilds.
+2. Em Configurações, verifique o jogo instalado e informe o token da cloud no
+   campo protegido, caso não exista `WORLDSYNC_API_TOKEN` no ambiente do usuário.
+   O campo mantém o token apenas em memória; não é salvo no perfil.
+3. Clique **Descobrir saves locais**. Escolha o arquivo correspondente ao mundo.
+   Nome de exibição e arquivo são dados separados: a aplicação não extrai o nome
+   interno do mundo. Confira arquivo, tamanho e data; se houver dúvida sobre a
+   correspondência, não adote. Não presume `Posto da Mata.sav`.
+4. Use nome **Posto da Mata**, ID **posto-da-mata** e crie o perfil local.
+5. Clique **Revisar adoção do mundo local**. Confira mundo, arquivo e SHA-256
+   na confirmação explícita. Só então será criado backup e publicada a revisão #1.
+   Criar um perfil sozinho não publica nem altera um save.
+6. Em Início, use **ASSUMIR E JOGAR**. Selecione e hospede o mundo pelo multiplayer
+   normal do jogo. Não há automação dentro do jogo.
+7. Ao terminar, feche Dragonwilds e mantenha WorldSync aberto até **Progresso
+   sincronizado**. A sessão só é liberada após commit confirmado.
+
+## PC B
+
+Instale o jogo normalmente. Abra e feche uma vez para criar seu diretório de saves.
+Prepare o token, crie um perfil com o **mesmo worldId** e use o nome de arquivo
+confirmado pelo PC A como destino local. A descoberta confirma a pasta mesmo
+quando a lista estiver vazia. Não adote um segundo mundo: use **ASSUMIR E JOGAR**.
+O download é validado antes da instalação; se existir um arquivo naquele destino,
+ele é preservado em backup. Os demais arquivos não são substituídos.
+
+A opção **Abrir Dragonwilds automaticamente ao assumir** vem habilitada. Desativada,
+o aplicativo aguarda você abrir o jogo, mantendo a posse. O processo precisa ser
+observado aberto e depois fechado para disparar a sincronização.
+
+## Segurança e limites deste preview
+
+- Mantenha o mesmo pacote/pasta durante a sessão: perfis, journal e backups ficam
+  em `core/config/local-game` e `core/state/local-game`. Não apague essas pastas.
+- Com jogo aberto, não há importação, descoberta, snapshot ou publicação.
+- Falha de integridade/rede/sessão conserva registros e exige recuperação explícita.
+  Não apague locks nem readquira uma sessão para contornar o erro. A recuperação
+  automática específica do adapter antigo não é aplicada ao novo fluxo.
+- Fechar a interface normalmente é bloqueado durante a sessão. Se a interface
+  cair, a ponte pode continuar em background. Reconexão a ela não é implementada.
+- O diretório conhecido é o da versão 1.x, `%LOCALAPPDATA%\RSDragonwilds\Saved\SaveGames`;
+  sua existência e ausência de links são verificadas. Caminhos alternativos falham
+  fechados. Não há varredura de outros perfis Windows.
+- Abertura automática usa Steam app 1374490. Outras lojas e os nomes de processo
+  desta instalação ainda precisam de qualificação com o jogo real fechado.
+- Steam Cloud/outros sincronizadores não são controlados por WorldSync. Coordene
+  seu uso antes do primeiro teste real; mudanças concorrentes detectadas bloqueiam
+  o fluxo. Não há garantia contra aplicativos externos iniciados manualmente no
+  intervalo entre uma checagem de processo e uma operação de arquivo.
+- Histórico mostra revisões observadas nesta execução; R2 não recebe um diagnóstico
+  independente. Não são simulados estados saudáveis nem histórico inexistente.
+- Este build foi testado com saves sintéticos/cloud em memória. Nenhum save real
+  foi adotado ou consultado, nenhum jogo iniciado e nenhuma cloud real modificada.
+
+## Desenvolvimento
+
+`src/local-game`: adapter e sessão. `ui/bridge.mjs`: ponte padrão.
+`src/lifecycle`: protocolo/cliente/supervisor reutilizados sem alteração.
+O adapter antigo permanece no repositório, fora da experiência padrão.
 
 ```powershell
-.\WorldSync.exe --core 'C:\caminho\dragonwilds-worldsync'
-```
-
-Sem `--core`, o ZIP usa sua pasta `core`, isolada dos perfis existentes.
-Não copie perfis de um PC para outro: os caminhos e identidade são locais.
-
-## Primeiro uso / PC B
-
-1. Abra **Configurações**, verifique os pré-requisitos e crie um perfil novo.
-2. Informe a instalação COPIADA do Dedicated Server (sem `RSDragonwilds\Saved`)
-   e um laboratório exclusivo. Use `worldsynctest` para continuar o mundo atual.
-3. Use o token compartilhado por canal privado no campo mascarado, ou configure
-   a variável de ambiente de usuário `WORLDSYNC_API_TOKEN`. O campo da UI usa
-   apenas memória e não persiste o token.
-4. Informe Owner ID e senhas do laboratório nos campos mascarados. Senhas
-   vazias autorizam geração forte pelo script existente. Nada é exibido.
-5. Volte a **Início**. Quando o mundo estiver livre, clique **ASSUMIR E INICIAR**.
-6. Ao terminar, clique **ENCERRAR E SINCRONIZAR** e mantenha o app aberto até
-   a revisão ser confirmada e a sessão liberada.
-
-O setup existente exige Windows Sandbox habilitado, virtualização e runtime
-Visual C++ no host. A UI não habilita recursos, reinicia Windows, copia a
-instalação Steam, altera roteador/firewall nem cria o mundo. Um mundo sem
-revisão canônica não pode ser iniciado pela UI. PC B não deve fazer seed.
-
-## Limites deliberados desta primeira versão
-
-- O core está inalterado. A ponte executa `worldsync.ps1 start`, conversa com
-  o CLI por stdin/stdout e observa o journal apenas para apresentar progresso.
-- O histórico mostra revisões observadas **nesta execução do app**, por mundo
-  e endpoint. A API atual não fornece histórico completo; isso não é simulado.
-- Diagnóstico de R2 aparece como **sem verificação independente**: status do
-  coordenador não comprova acesso ao bucket. Hash/download continuam no core.
-- Alterar caminhos/worldId gera um **novo perfil**, preservando o antigo.
-  O nome do host é o nome do PC; demais opções qualificadas são mantidas pelo
-  setup existente. Não há editor genérico de opções do core.
-- Recuperação só fica habilitada para o incidente específico já validado pelo
-  core, com backup escolhido explicitamente. Outros casos mostram orientação,
-  sem reacquire, exclusão de locks ou tentativa de recuperação inventada.
-- O fechamento normal é bloqueado com supervisor ativo. Encerramento forçado
-  da UI não mata deliberadamente o supervisor: a ponte permanece em background.
-  Reconectar a uma ponte órfã não é suportado nesta primeira versão. Não use o
-  Gerenciador de Tarefas para encerrar o app durante uma sessão.
-- Credenciais ficam somente no ambiente/processo e no INI isolado escrito pelo
-  script existente. Diagnóstico é uma projeção explícita; stderr/logs brutos
-  nunca são exibidos ou copiados. Não há log de comandos contendo credenciais.
-- Não foi repetida uma sessão real de jogo nesta fase. A consulta real foi
-  somente leitura; ações e telas foram exercitadas com estados sintéticos.
-  O próximo teste é uma sessão controlada pelo usuário pela UI.
-
-## Desenvolvimento e validação
-
-Projeto: `ui/WorldSync.Desktop` (C#, WPF/XAML, .NET 8). Ponte:
-`ui/bridge.mjs`. Adaptação de entrada do wizard: `ui/scripts`.
-
-```powershell
-node --test ui/tests/*.test.mjs
+node --test tests/local-game.test.mjs ui/tests/bridge.test.mjs
 dotnet run --project ui/tests/Presentation.Tests.csproj -c Release
-dotnet build ui/WorldSync.Desktop -c Release
-.\ui\WorldSync.Desktop\bin\Release\net8.0-windows\WorldSync.exe --demo --ui-test 'C:\WorldSync-UiTests'
-.\ui\build.ps1 -Dotnet 'C:\caminho\dotnet.exe'
+.\ui\build.ps1
 ```
 
-Os modos `--demo` e `--ui-test` não abrem a ponte nem executam ações reais.
-`--capture caminho.png --exit-after-capture` renderiza o app com status real
-somente leitura e sai. Capturas não incluem campos de credencial em texto.
-
-Publicação WPF: https://learn.microsoft.com/dotnet/core/deploying/
+`WorldSync.exe --demo --ui-test C:\WorldSync-UiTests` renderiza telas sintéticas
+sem iniciar a ponte. Nunca use captura em modo normal para testar saves ativos.

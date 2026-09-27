@@ -11,11 +11,11 @@ public partial class MainWindow : Window
 {
  CoreBridge? bridge;
  bool owned,busy,allowClose,changingProfiles,restarting,demo;
- string action="",phase="idle",world="",endpoint="",sandbox="Não verificado",server="Não observado",api="Aguardando",visual="idle";
+ string action="",phase="idle",world="",endpoint="",gameInstall="Não verificado",server="Não observado",api="Aguardando",visual="idle";
  string sessionStatus="Não verificada";
  int revision;
  readonly Dictionary<string,RevisionRow> history=new();
- readonly string[] stepNames=["Aguardando autosave","Autosave confirmado","Encerrando servidor","Verificando save","Publicando revisão","Concluído"];
+ readonly string[] stepNames=["Aguardando estabilidade","Leitura exclusiva","Backup e snapshot","Verificando SHA-256","Publicando revisão","Concluído"];
  public record RevisionRow(string World,string Endpoint,int Revision,string Time,string Host,string Hash);
  public MainWindow()
  {
@@ -49,9 +49,9 @@ public partial class MainWindow : Window
     confirmedProfile=S(m,"profile");
     var remembered=demo || bridge==null || ProfileSelection.Save(bridge.Root,confirmedProfile);
     changingProfiles=true;if(Profiles.Items.Contains(confirmedProfile))Profiles.SelectedItem=confirmedProfile;changingProfiles=false;
-    world=S(m,"worldId");WorldName.Text=world=="worldsynctest"?"WorldSyncTest":world;endpoint=S(m,"endpoint");EndpointInput.Text=endpoint;
-    ProfileInput.Text=S(m,"profile");WorldInput.Text=world;LabInput.Text=S(m,"labPath");InstallInput.Text=S(m,"installPath");
-    HostOptions.Text="Host: "+S(m,"host")+" • instalação somente leitura • rede do Sandbox habilitada";
+    world=S(m,"worldId");WorldName.Text=S(m,"displayName");endpoint=S(m,"endpoint");EndpointInput.Text=endpoint;
+    ProfileInput.Text=S(m,"profile");WorldInput.Text=world;DisplayNameInput.Text=S(m,"displayName");SaveFileInput.Text=S(m,"fileName");SaveDirectory.Text=S(m,"saveRoot");AutoLaunch.IsChecked=B(m,"autoLaunch");selectedFile=S(m,"fileName");
+    HostOptions.Text="Host: "+S(m,"host")+" • jogo local • sincronização após fechar Dragonwilds";
     Notice.Visibility=Visibility.Collapsed;if(!remembered)ShowNotice("O perfil foi selecionado, mas não foi possível lembrar esta escolha neste PC.");Send(new{action="inspect"});break;
    case "state":
     owned=B(m,"owned");busy=B(m,"busy");phase=S(m,"phase");
@@ -59,15 +59,17 @@ public partial class MainWindow : Window
     var avail=connected?S(c,"availability"):"unknown";
     sessionStatus=avail switch {"free"=>"Livre","busy"=>"Hospedando","committing"=>"Publicando","recovery_required"=>"Recuperação necessária",_=>"Não verificada"};
     var v=Presentation.Map(phase,avail,owned,busy,connected);visual=v.Key;
-    StateBadge.Text=v.Key switch {"free"=>"DISPONÍVEL","running"=>"SERVIDOR ONLINE","finalizing"=>"FINALIZANDO","recovery_required"=>"RECUPERAÇÃO NECESSÁRIA","publishing"=>"SINCRONIZANDO","completed"=>"CONCLUÍDO","assuming"=>"PREPARANDO","prepared"=>"PREPARADO","busy"=>"EM USO",_=>"INDISPONÍVEL"};StateTitle.Text=v.Title;StateDetail.Text=v.Detail;
+    StateBadge.Text=v.Key switch {"free"=>"DISPONÍVEL","running"=>"VOCÊ ESTÁ HOSPEDANDO","finalizing"=>"FINALIZANDO","recovery_required"=>"RECUPERAÇÃO NECESSÁRIA","publishing"=>"SINCRONIZANDO","completed"=>"CONCLUÍDO","assuming"=>"PREPARANDO","waiting_for_game"=>"ABRA O JOGO","prepared"=>"PREPARADO","busy"=>"EM USO",_=>"INDISPONÍVEL"};StateTitle.Text=v.Title;StateDetail.Text=v.Detail;
     action=v.Action;PrimaryButton.Content=v.Cta;PrimaryButton.IsEnabled=v.Enabled && (connected && N(c,"revision")>0);
-    Profiles.IsEnabled=!owned&&!busy;SetupButton.IsEnabled=TokenButton.IsEnabled=CredentialsButton.IsEnabled=!owned&&!busy;
+    Profiles.IsEnabled=!owned&&!busy;SetupButton.IsEnabled=TokenButton.IsEnabled=DiscoverButton.IsEnabled=OptionsButton.IsEnabled=!owned&&!busy;
+    AdoptButton.IsEnabled=!owned&&!busy&&connected&&N(c,"revision")==0&&avail=="free";
+    if(v.Key=="busy"&&!string.IsNullOrWhiteSpace(S(c,"host")))StateTitle.Text=S(c,"host")+" está hospedando";
     RecoveryPanel.Visibility=v.Key=="recovery_required"?Visibility.Visible:Visibility.Collapsed;
     RecoverButton.IsEnabled=B(m,"recoveryEligible")&&!busy;
-    RecoveryHint.Text=RecoverButton.IsEnabled?"Selecione o backup preservado para executar a recuperação já validada.":"Este caso não dispõe de recuperação genérica validada. Copie o diagnóstico e preserve o laboratório.";
+    RecoveryHint.Text=RecoverButton.IsEnabled?"Selecione o backup preservado para executar a recuperação já validada.":"Este caso não dispõe de recuperação genérica validada. Copie o diagnóstico e preserve os saves e backups.";
     RenderSteps(v.Step);
     api=connected?"Disponível":"Indisponível";CloudText.Text="Cloud: "+api;
-    server=owned&&phase=="running"?"Hospedando (supervisor)":owned&&phase=="finalizing"?"Aguardando autosave":phase is "stopped" or "completed"?"Encerrado (registro local)":"Não observado ao vivo";
+    server=owned&&phase=="running"?"Hospedando (supervisor)":owned&&phase=="finalizing"?"Verificando save":phase is "stopped" or "completed"?"Encerrado (registro local)":"Não observado ao vivo";
     if(connected){
      revision=N(c,"revision");RevisionText.Text="#"+revision;
      HostText.Text=avail=="free"?"Nenhum host":S(c,"host");
@@ -82,11 +84,14 @@ public partial class MainWindow : Window
 
     RenderLauncherStatus(v.Key,connected);UpdateDiagnostic();CaptureIfRequested();break;
    case "checks":
-    sandbox=B(m,"sandboxRunning")?"Em execução":B(m,"sandbox")?"Habilitado; VM não confirmada":"Indisponível";
-    ChecksText.Text=$"{Check(B(m,"sandbox"))} Windows Sandbox   •   {Check(B(m,"virtualization"))} Virtualização\n{Check(B(m,"originalInstall"))} Servidor instalado (local padrão; não utilizado)\n{Check(B(m,"copiedInstall"))} Instalação copiada   •   {Check(B(m,"lab"))} Laboratório\n{Check(B(m,"token"))} Token no ambiente   •   {Check(B(m,"credentials"))} Credenciais locais preparadas";
-    UpdateDiagnostic();break;
-   case "setup":busy=false;ShowNotice("Perfil criado pela automação existente. Agora configure as credenciais locais.");break;
-   case "credentials":busy=false;OwnerInput.Clear();AdminInput.Clear();WorldPasswordInput.Clear();ShowNotice("Credenciais do laboratório salvas sem exibir os valores.");Send(new{action="inspect"});break;
+    gameInstall=B(m,"installed")?"Detectado":"Não detectado";server=B(m,"gameActive")?"Jogo aberto":"Jogo fechado";
+    ChecksText.Text=$"{Check(B(m,"installed"))} Dragonwilds instalado   •   {Check(B(m,"token"))} Token no ambiente\n{server} • descoberta e adoção exigem o jogo fechado";UpdateDiagnostic();break;
+   case "worlds":
+    SaveDirectory.Text=S(m,"root");WorldFiles.Items.Clear();
+    foreach(var w in m.GetProperty("worlds").EnumerateArray())WorldFiles.Items.Add(new SaveChoice(S(w,"fileName"),S(w,"sha256"),N(w,"bytes"),S(w,"mtimeUtc")));
+    ShowNotice("Escolha o arquivo e confirme qual mundo ele representa. O nome exibido pelo jogo não foi extraído do save.");break;
+   case "setup":busy=false;ShowNotice("Perfil criado. A adoção inicial exige uma confirmação separada.");break;
+   case "options":ShowNotice("Opção de abertura salva.");break;
    case "error":busy=false;ShowNotice(Presentation.Error(S(m,"code")));break;
    case "closeBlocked":ShowNotice("O supervisor está ativo. Conclua a finalização e sincronização antes de fechar.");break;
    case "closed":
@@ -158,7 +163,7 @@ public partial class MainWindow : Window
   HistoryEmpty.Visibility=rows.Length==0?Visibility.Visible:Visibility.Collapsed;
   foreach(var r in rows)HistoryItems.Items.Add(new TextBlock{Text=$"#{r.Revision}    •    {LocalTime(r.Time)}    •    {r.Host}    •    {r.Hash[..Math.Min(12,r.Hash.Length)]}…    ✓ Publicada",Margin=new Thickness(0,0,0,20)});
  }
- void UpdateDiagnostic()=>DiagnosticText.Text=Presentation.Diagnostic(world,revision,visual,api,sandbox,server,endpoint,sessionStatus);
+ void UpdateDiagnostic()=>DiagnosticText.Text=Presentation.Diagnostic(world,revision,visual,api,gameInstall,server,endpoint,sessionStatus);
  void ShowNotice(string text){NoticeText.Text=text;Notice.Visibility=Visibility.Visible;}
  void Navigate(object sender,RoutedEventArgs e)=>ShowPage((sender as Button)?.Tag?.ToString()??"Home");
  void ShowPage(string name){foreach(var button in ((StackPanel)NavHome.Parent).Children.OfType<Button>())button.Background=new SolidColorBrush(button.Tag?.ToString()==name?Color.FromRgb(33,59,59):Colors.Transparent);HomePage.Visibility=name=="Home"?Visibility.Visible:Visibility.Collapsed;HistoryPage.Visibility=name=="History"?Visibility.Visible:Visibility.Collapsed;DiagnosticsPage.Visibility=name=="Diagnostics"?Visibility.Visible:Visibility.Collapsed;SettingsPage.Visibility=name=="Settings"?Visibility.Visible:Visibility.Collapsed;}
@@ -167,17 +172,28 @@ public partial class MainWindow : Window
  void PrimaryClick(object sender,RoutedEventArgs e){if(!PrimaryButton.IsEnabled||action=="")return;PrimaryButton.IsEnabled=false;busy=true;Send(new{action});}
  void InspectClick(object sender,RoutedEventArgs e)=>Send(new{action="inspect"});
  void CopyDiagnostic(object sender,RoutedEventArgs e){try{Clipboard.SetText(DiagnosticText.Text);ShowNotice("Diagnóstico seguro copiado.");}catch{ShowNotice("A área de transferência está ocupada. Tente novamente.");}}
- void SetupClick(object sender,RoutedEventArgs e){if(owned||busy)return;busy=true;Send(new{action="setup",values=new{profile=ProfileInput.Text.Trim(),worldId=WorldInput.Text.Trim(),installPath=InstallInput.Text.Trim(),labPath=LabInput.Text.Trim()}});}
- void CredentialsClick(object sender,RoutedEventArgs e){if(owned||busy)return;if(OwnerInput.Password.Length==0){ShowNotice("Informe o Owner ID válido no campo protegido.");return;}busy=true;Send(new{action="credentials",values=new{owner=OwnerInput.Password,admin=AdminInput.Password,world=WorldPasswordInput.Password}});OwnerInput.Clear();AdminInput.Clear();WorldPasswordInput.Clear();}
+ string selectedFile="";
+ public record SaveChoice(string FileName,string Hash,int Bytes,string Mtime){public string Label=>$"{FileName} • {Bytes:N0} bytes • {Mtime}";}
+ void DiscoverClick(object sender,RoutedEventArgs e){if(!owned&&!busy)Send(new{action="discover"});}
+ void WorldFileChanged(object sender,SelectionChangedEventArgs e){if(WorldFiles.SelectedItem is SaveChoice s)SaveFileInput.Text=s.FileName;}
+ void SetupClick(object sender,RoutedEventArgs e){if(owned||busy)return;busy=true;Send(new{action="setup",values=new{profile=ProfileInput.Text.Trim(),worldId=WorldInput.Text.Trim(),displayName=DisplayNameInput.Text.Trim(),fileName=SaveFileInput.Text.Trim(),autoLaunch=AutoLaunch.IsChecked==true}});}
+ void OptionsClick(object sender,RoutedEventArgs e){if(!owned&&!busy)Send(new{action="options",autoLaunch=AutoLaunch.IsChecked==true});}
+ void AdoptClick(object sender,RoutedEventArgs e){
+  if(owned||busy||!AdoptButton.IsEnabled)return;
+  if(WorldFiles.SelectedItem is not SaveChoice choice||choice.FileName!=selectedFile){ShowNotice("Descubra e selecione exatamente o arquivo do perfil ativo antes de adotar.");return;}
+  var message=$"Confirme que este arquivo é o mundo correto:\n\nMundo: {WorldName.Text}\nWorld ID: {world}\nArquivo: {choice.FileName}\nTamanho: {choice.Bytes} bytes\nSHA-256: {choice.Hash}\n\nCriar backup e publicar como revisão #1?";
+  if(MessageBox.Show(this,message,"Confirmar adoção explícita",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
+  busy=true;Send(new{action="adopt",confirmed=true,worldId=world,expectedHash=choice.Hash});
+ }
  string? pendingToken;
  void TokenClick(object sender,RoutedEventArgs e){if(owned||busy)return;if(TokenInput.Password.Length<24){ShowNotice("Informe um token válido no campo protegido.");return;}pendingToken=TokenInput.Password;TokenInput.Clear();restarting=true;if(bridge==null){restarting=false;StartBridge(pendingToken);pendingToken=null;}else Send(new{action="quit"});}
- void RecoverClick(object sender,RoutedEventArgs e){if(!RecoverButton.IsEnabled)return;var dialog=new OpenFileDialog{Title="Selecione o backup preservado da sessão",Filter="Save preservado (*.sav)|*.sav",CheckFileExists=true};if(dialog.ShowDialog()==true){busy=true;RecoverButton.IsEnabled=false;Send(new{action="recover",backup=dialog.FileName});}}
- void OnClosing(object? sender,CancelEventArgs e){if(allowClose||demo)return;e.Cancel=true;if(!Presentation.CanClose(owned,busy)){ShowNotice("Mantenha o app aberto até concluir ENCERRAR E SINCRONIZAR. O supervisor continua ativo.");return;}if(bridge==null){allowClose=true;e.Cancel=false;}else Send(new{action="quit"});}
+ void RecoverClick(object sender,RoutedEventArgs e)=>ShowNotice("Preserve os arquivos e a sessão para recuperação explícita. Nenhum envio foi iniciado.");
+ void OnClosing(object? sender,CancelEventArgs e){if(allowClose||demo)return;e.Cancel=true;if(!Presentation.CanClose(owned,busy)){ShowNotice("Mantenha o app aberto até fechar o jogo e concluir a sincronização. O supervisor continua ativo.");return;}if(bridge==null){allowClose=true;e.Cancel=false;}else Send(new{action="quit"});}
  void RenderDemo()
  {
-  world="WorldSyncTest";endpoint="https://dragonwilds-worldsync-api.contactforwillbr.workers.dev";
+  world="Posto da Mata";endpoint="https://dragonwilds-worldsync-api.contactforwillbr.workers.dev";
   WorldName.Text=world=="worldsynctest"?"WorldSyncTest":world;revision=2;RevisionText.Text="#2";StateBadge.Text="DISPONÍVEL";StateTitle.Text="Disponível para jogar";StateDetail.Text="Tudo começa pela última revisão publicada. Seu progresso acompanha o mundo.";HostText.Text="Nenhum host";SyncText.Text="26 set • 20:36";IntegrityText.Text="SHA-256 canônico registrado";CloudText.Text="Cloud: disponível";
-  PrimaryButton.IsEnabled=false;api="Disponível (demonstração)";sandbox="Habilitado (demonstração)";UpdateDiagnostic();
+  PrimaryButton.IsEnabled=false;api="Disponível (demonstração)";gameInstall="Detectado (demonstração)";UpdateDiagnostic();
   history["demo"]=new(world,endpoint,2,"2026-09-26T23:36:00Z","PC A","fcb496ed002ff468706e891d1b6c37ff2178d845fa23e9d6ed79056cc113aa73");RenderHistory();
  }
  async Task UiSmoke()
@@ -194,15 +210,14 @@ public partial class MainWindow : Window
    confirmedProfile="pc-b";await LoadProfiles(["pc-a","pc-b"]);Require(Profiles.SelectedItem?.ToString()=="pc-b");
    ShowPage("Home");
    State("idle",false,false,"free");Require(PrimaryButton.IsEnabled);PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
-   State("running",true,false);Require(PrimaryButton.IsEnabled&&action=="stop");await Task.Delay(80);Capture("running");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("stop"));
+   State("running",true,false);Require(!PrimaryButton.IsEnabled&&action=="");await Task.Delay(80);Capture("running");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("finalizing",true,true);Require(!PrimaryButton.IsEnabled&&Steps.Items.Count==6);ShowPage("Home");await Task.Delay(100);Capture("finalizing");
    State("recovery_required",false,false,"recovery_required");Require(RecoveryPanel.Visibility==Visibility.Visible&&!RecoverButton.IsEnabled);Capture("recovery");
    State("completed",false,false,"free");
    foreach(var page in new[]{"Home","History","Diagnostics","Settings"}){ShowPage(page);await Task.Delay(80);Capture(page.ToLowerInvariant());}
    AdvancedProfiles.IsExpanded=true;AdvancedProfiles.BringIntoView();await Task.Delay(100);Capture("local-profiles");
-   OwnerInput.Password="PRIVATE_OWNER_SENTINEL";AdminInput.Password="PRIVATE_ADMIN_SENTINEL";WorldPasswordInput.Password="PRIVATE_WORLD_SENTINEL";
-   Require(!DiagnosticText.Text.Contains("SENTINEL"));OwnerInput.BringIntoView();await Task.Delay(150);Capture("masked-credentials");
-   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; automatic profile selection, advanced profile management; nine rendered views.");
+   TokenInput.Password="PRIVATE_TOKEN_SENTINEL";Require(!DiagnosticText.Text.Contains("SENTINEL"));TokenInput.BringIntoView();await Task.Delay(150);Capture("masked-token");
+   File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"PASS: WPF navigation, action dispatch, finalizing disabled, six steps, recovery screen, safe diagnostic; running cannot publish; automatic profile selection, advanced profile management; nine rendered views.");
   }catch{File.WriteAllText(Path.Combine(dir,"ui-test-result.txt"),"FAIL: UI_TEST_FAILED");Environment.ExitCode=1;}
   finally{allowClose=true;Close();}
  }

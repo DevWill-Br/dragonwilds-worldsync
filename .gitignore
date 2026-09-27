@@ -12,3 +12,4 @@ cloud/.dev.vars
 ui/**/bin/
 ui/**/obj/
 ui/artifacts/
+state/
