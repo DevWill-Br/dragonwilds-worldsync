@@ -2,7 +2,13 @@
  <PropertyGroup>
   <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF>
   <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>WorldSync</AssemblyName>
+  <ApplicationIcon>Assets/Brand/app.ico</ApplicationIcon>
   <ApplicationManifest>app.manifest</ApplicationManifest>
  </PropertyGroup>
  <ItemGroup><Resource Include="Assets/worldsync-hero.png" /></ItemGroup>
+ <ItemGroup>
+  <Resource Include="Assets/Brand/app.ico" />
+  <Resource Include="Assets/Brand/worldsync-icon-master.png" />
+  <Content Include="Assets/Brand/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+ </ItemGroup>
 </Project>

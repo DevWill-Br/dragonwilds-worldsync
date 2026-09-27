@@ -17,6 +17,7 @@ New-Item -ItemType Directory -Path (Join-Path $core 'config/local-game'),(Join-P
 Copy-Item -LiteralPath (Get-Command node).Source -Destination (Join-Path $out 'runtime/node.exe')
 $nodeVersion=(& node --version).TrimStart('v')
 Invoke-WebRequest ('https://raw.githubusercontent.com/nodejs/node/v'+$nodeVersion+'/LICENSE') -OutFile (Join-Path $out 'runtime/NODE-LICENSE.txt')
+Copy-Item (Join-Path $PSScriptRoot 'Create-Shortcut.ps1') (Join-Path $out 'Create-Shortcut.ps1')
 Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $out 'LEIA-ME.md')
 if(Get-ChildItem $out -Recurse -File | Where-Object { $_.Name -match '\.sav($|\.)|\.ini$|\.local\.json$|^\.dev\.vars$|^lifecycle\.json$|\.lock$' }){throw 'PRIVATE_FILE_IN_PACKAGE'}
 @{ui='2.0-preview';node=$nodeVersion;coreCommit=(& git -C $repo rev-parse HEAD);generatedUtc=[datetime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content (Join-Path $out 'build-info.json')

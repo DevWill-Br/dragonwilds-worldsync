@@ -122,3 +122,11 @@ Os caminhos antigos registrados em journals concluídos são mantidos como evid�
 a próxima sessão cria registros e backups novos no UserDataRoot. A seleção do último
 perfil fica em `preferences/last-profile.txt`, sem credenciais. O relatório de migração
 contém apenas data/contagens/resultado, nunca token ou conteúdo de saves.
+
+## Ícone e atalhos
+
+O ícone oficial está embutido no EXE e na janela WPF. Após extrair o ZIP,
+execute `powershell -NoProfile -ExecutionPolicy Bypass -File .\Create-Shortcut.ps1`
+para criar/atualizar o atalho da Área de Trabalho. Acrescente `-StartMenu`
+para criar/atualizar o atalho do Menu Iniciar. Ambos usam o EXE da instalação,
+inclusive como fonte do ícone. Não mova a instalação depois de criar o atalho.

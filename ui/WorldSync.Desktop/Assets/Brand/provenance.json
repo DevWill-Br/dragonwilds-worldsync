@@ -1,0 +1,9 @@
+{
+  "sourceProject": "7818f69c-a4bd-4344-8620-945f5a9a8eca",
+  "sourceSha256": "e38a2112cb7f7221394a23c29f7b0229bc176a8a153439f8b040a85723e83500",
+  "exports": {
+    "worldsync-icon-master.svg": "e15910326c61418e80ab7daad7d6eedc68ef7a675dee84749d787658bb26a002",
+    "worldsync-icon-light.svg": "09b5edea3d7aab4bb27ef1d2ce1203b955ebd97d6e5703fffab82371595a5d84",
+    "worldsync-icon-app.svg": "bfa3f362a0814b5afa388b9d959da8d23da889d68048fa677e5b8aa3103dd5e8"
+  }
+}
