@@ -1,3 +1,4 @@
+import {userDataPaths,inside} from '../user-data/paths.mjs';
 import { mkdir, lstat, open, readFile, rename, realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -11,9 +12,9 @@ export const fixtureBase = path.join(repoRoot, 'tests', '.scratch', 'lifecycle')
 
 export async function noLinks(target) {
   const relative = path.relative(repoRoot, target);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('OUTSIDE_PROJECT');
-  let current = repoRoot;
-  for (const part of relative.split(path.sep)) {
+  if (!inside(target,repoRoot) && !inside(target,userDataPaths().root)) throw new Error('OUTSIDE_PROJECT');
+  let current = path.parse(path.resolve(target)).root;
+  for (const part of path.relative(current,path.resolve(target)).split(path.sep)) {
     current = path.join(current, part);
     const info = await lstat(current).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     if (info?.isSymbolicLink()) throw new Error('REPARSE_POINT_REJECTED');

@@ -27,9 +27,15 @@ Check(!ProfileSelection.Save(prefsRoot,"../invalid"));Check(ProfileSelection.Rea
 Console.WriteLine("PASS: zero/single/multiple profiles, missing preference, persistence, invalid preference.");
 
 var repo=Directory.GetCurrentDirectory();
+var syntheticAppData=Path.Combine(repo,"tests/.scratch/user-data-csharp",Guid.NewGuid().ToString());
+Environment.SetEnvironmentVariable("LOCALAPPDATA",syntheticAppData);
+var shared=Path.Combine(syntheticAppData,"WorldSync");
+Check(ProfileSelection.Save(shared,"pc-b"));Check(ProfileSelection.Read(shared)=="pc-b");
+Check(Presentation.CurrentHost("free","old")=="Nenhum");Check(Presentation.CurrentHost("busy","PC-B")=="PC-B");
+Check(Presentation.LastSync("WILLI","2026-09-27T06:29:00Z").StartsWith("WILLI • "));Check(Presentation.LastSync("","")=="Não disponível • Não disponível");
 if(File.Exists(Path.Combine(repo,"src/local-game/profile.mjs"))){
  var good="ui-valid-"+Guid.NewGuid().ToString("N")[..12];var bad="ui-bad-"+Guid.NewGuid().ToString("N")[..12];
- var goodFile=Path.Combine(repo,"config/local-game",good+".local.json");var badFile=Path.Combine(repo,"config/local-game",bad+".local.json");
+ var goodFile=Path.Combine(shared,"profiles",good+".local.json");var badFile=Path.Combine(shared,"profiles",bad+".local.json");
  try{
   Directory.CreateDirectory(Path.GetDirectoryName(goodFile)!);
   File.WriteAllText(goodFile,"\uFEFF"+System.Text.Json.JsonSerializer.Serialize(new{mode="local-game",profile=good,worldId="test",displayName="Synthetic",cloudUrl="https://example.com",saveRoot=repo,fileName="synthetic.sav",autoLaunch=true,machineId=Guid.NewGuid().ToString()}));

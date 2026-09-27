@@ -40,8 +40,9 @@ observado aberto e depois fechado para disparar a sincronização.
 
 ## Segurança e limites deste preview
 
-- Mantenha o mesmo pacote/pasta durante a sessão: perfis, journal e backups ficam
-  em `core/config/local-game` e `core/state/local-game`. Não apague essas pastas.
+- Perfis, preferências, journals, locks e backups internos ficam em
+  `%LOCALAPPDATA%\WorldSync`. Atualizar a pasta do executável não altera esses dados.
+  Não apague essa pasta nem troque de versão durante uma sessão.
 - Com jogo aberto, não há importação, descoberta, snapshot ou publicação.
 - Falha de integridade/rede/sessão conserva registros e exige recuperação explícita.
   Não apague locks nem readquira uma sessão para contornar o erro. A recuperação
@@ -91,3 +92,31 @@ o app não modifica essa variável. Salvar/remover reconecta a ponte e atualiza
 status do mundo selecionado. Essas ações ficam bloqueadas durante uma sessão ativa.
 Nenhuma credencial real é lida pelos testes: eles usam um alvo Windows descartável
 `WorldSync.Tests/<guid>` e uma ponte sintética sem cloud.
+
+## Persistência e primeira atualização
+
+`%LOCALAPPDATA%\WorldSync` contém `profiles`, `state`, `preferences` e `backups`.
+Credenciais continuam no Windows Credential Manager; saves continuam na pasta do jogo.
+A build contém apenas programa, runtime e assets. Ao abrir, o último perfil válido é
+selecionado automaticamente e a cloud é consultada imediatamente. Enquanto aguarda,
+**ASSUMIR E INICIAR** fica desabilitado. Troca manual fica em Configurações > Avançado.
+
+Na primeira abertura, se WorldSync ainda não existir em LOCALAPPDATA, a ponte procura
+os dados antigos do core atual, versões em pastas irmãs e checkout ancestral quando
+se trata de uma build de desenvolvimento. Copia somente perfis e dados internos;
+não segue caminhos de saves registrados nos perfis/journals. Compara hashes das cópias,
+reverifica a origem e publica o diretório inteiro. A origem não é excluída.
+
+Sessão pendente, recovery, journal incompleto, arquivo lock, link perigoso ou múltiplas
+origens interrompem a migração. Não remova locks para contornar a mensagem. Pastas
+parciais `.migration-*` ficam preservadas se houver falha; o destino não é ativado.
+A origem deve estar fechada e não deve voltar a ser usada após a migração, pois versões
+antigas desconhecem o diretório compartilhado. Builds futuras usam o mesmo UserDataRoot.
+Se a instalação antiga estiver em outro local sem relação com a nova, ela não é
+procurada por varredura do disco: a origem precisa ser identificada explicitamente
+antes de migrar. Nenhum dado existente no novo destino é mesclado/sobrescrito.
+
+Os caminhos antigos registrados em journals concluídos são mantidos como evidência;
+a próxima sessão cria registros e backups novos no UserDataRoot. A seleção do último
+perfil fica em `preferences/last-profile.txt`, sem credenciais. O relatório de migração
+contém apenas data/contagens/resultado, nunca token ou conteúdo de saves.

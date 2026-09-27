@@ -1,6 +1,8 @@
 namespace WorldSync.Desktop;
 public record VisualState(string Key,string Title,string Detail,string Cta,string Action,bool Enabled,int Step);
 public static class Presentation {
+ public static string CurrentHost(string availability,string host)=>availability=="free"?"Nenhum":string.IsNullOrWhiteSpace(host)?"Não disponível":host;
+ public static string LastSync(string host,string utc){var name=string.IsNullOrWhiteSpace(host)?"Não disponível":host;var time=DateTimeOffset.TryParse(utc,out var date)?date.ToLocalTime().ToString("dd MMM • HH:mm"):"Não disponível";return name+" • "+time;}
  public static bool CanClose(bool owned,bool busy)=>!owned&&!busy;
  public static VisualState Map(string phase,string availability,bool owned,bool busy,bool connected){
   if(phase=="recovery_required"||availability=="recovery_required"||(!owned&&!busy&&phase is not "idle" and not "completed"))return new("recovery_required","Recuperação necessária","Save, backups e sessão preservados. Não inicie outra sessão.","RECUPERAÇÃO NECESSÁRIA","",false,-1);

@@ -7,9 +7,9 @@ $out=Join-Path $repo ('ui/artifacts/WorldSync-2.0-win-x64-'+$stamp)
 if($LASTEXITCODE -ne 0){throw 'BUILD_FAILED'}
 # Package an explicit source allowlist. Never copy a working directory wholesale.
 $core=Join-Path $out 'core'
-foreach($dir in @('src/lifecycle','src/local-game')) {
+foreach($dir in @('src/lifecycle','src/local-game','src/user-data')) {
  $target=Join-Path $core $dir;New-Item -ItemType Directory -Path $target -Force | Out-Null
- Get-ChildItem -LiteralPath (Join-Path $repo $dir) -File | Where-Object Extension -in @('.mjs','.ps1') | Copy-Item -Destination $target
+ Get-ChildItem -LiteralPath (Join-Path $repo $dir) -File | Where-Object Extension -in @('.mjs','.ps1','.json') | Copy-Item -Destination $target
 }
 New-Item -ItemType Directory -Path (Join-Path $core 'ui') -Force | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'bridge.mjs') (Join-Path $core 'ui/bridge.mjs')

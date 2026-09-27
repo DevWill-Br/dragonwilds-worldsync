@@ -46,18 +46,26 @@ public partial class MainWindow : Window
   switch(S(m,"type"))
   {
    case "profiles":
+    userDataRoot=S(m,"userDataRoot");
     _=LoadProfiles(m.GetProperty("names").EnumerateArray().Select(n=>n.GetString()!).ToArray());
     break;
    case "profile":
+    ShowConsulting();
     confirmedProfile=S(m,"profile");
-    var remembered=demo || bridge==null || ProfileSelection.Save(bridge.Root,confirmedProfile);
+    var remembered=demo || bridge==null || ProfileSelection.Save(userDataRoot!,confirmedProfile);
     changingProfiles=true;if(Profiles.Items.Contains(confirmedProfile))Profiles.SelectedItem=confirmedProfile;changingProfiles=false;
     world=S(m,"worldId");WorldName.Text=S(m,"displayName");endpoint=S(m,"endpoint");EndpointInput.Text=endpoint;
     ProfileInput.Text=S(m,"profile");WorldInput.Text=world;DisplayNameInput.Text=S(m,"displayName");SaveFileInput.Text=S(m,"fileName");SaveDirectory.Text=S(m,"saveRoot");AutoLaunch.IsChecked=B(m,"autoLaunch");selectedFile=S(m,"fileName");
     HostOptions.Text="Host: "+S(m,"host")+" • jogo local • sincronização após fechar Dragonwilds";
     Notice.Visibility=Visibility.Collapsed;if(!remembered)ShowNotice("O perfil foi selecionado, mas não foi possível lembrar esta escolha neste PC.");Send(new{action="inspect"});break;
+   case "startupBlocked":
+    bridge=null;
+    PrimaryButton.IsEnabled=false;SetupButton.IsEnabled=DiscoverButton.IsEnabled=AdoptButton.IsEnabled=false;
+    ShowNotice("Migração não executada. Feche a versão anterior e preserve seus dados: há sessão/registro pendente, origem ambígua ou dados que exigem revisão. Código: "+S(m,"code"));break;
+   case "consulting":ShowConsulting();break;
    case "state":
     owned=B(m,"owned");busy=B(m,"busy");phase=S(m,"phase");
+    if(B(m,"consulting")){ShowConsulting();break;}
     var connected=m.TryGetProperty("cloud",out var c)&&c.ValueKind==JsonValueKind.Object;
     var avail=connected?S(c,"availability"):"unknown";
     sessionStatus=avail switch {"free"=>"Livre","busy"=>"Hospedando","committing"=>"Publicando","recovery_required"=>"Recuperação necessária",_=>"Não verificada"};
@@ -75,10 +83,11 @@ public partial class MainWindow : Window
     server=owned&&phase=="running"?"Hospedando (supervisor)":owned&&phase=="finalizing"?"Verificando save":phase is "stopped" or "completed"?"Encerrado (registro local)":"Não observado ao vivo";
     if(connected){
      revision=N(c,"revision");RevisionText.Text="#"+revision;
-     HostText.Text=avail=="free"?"Nenhum host":S(c,"host");
+     HostText.Text=Presentation.CurrentHost(avail,S(c,"host"));
      IntegrityText.Text=revision>0?"Hash registrado":"Sem revisão";
+     SyncText.Text="Não disponível";
      if(c.TryGetProperty("latest",out var l)&&l.ValueKind==JsonValueKind.Object){
-      var time=S(l,"time");SyncText.Text=LocalTime(time);
+      var time=S(l,"time");SyncText.Text=Presentation.LastSync(S(l,"host"),time);
       var row=new RevisionRow(world,endpoint,N(l,"revision"),time,S(l,"host"),S(l,"hash"));
       history[$"{endpoint}|{world}|{row.Revision}"]=row;RenderHistory();
      }
@@ -104,6 +113,7 @@ public partial class MainWindow : Window
   }
  }
  string? confirmedProfile;
+ string? userDataRoot;
  int profilesLoadVersion;
  async Task LoadProfiles(string[] candidates)
  {
@@ -111,7 +121,7 @@ public partial class MainWindow : Window
   try {
    var valid=demo?candidates:await ProfileSelection.Validate(currentBridge!.Root,candidates);
    if(version!=profilesLoadVersion || !ReferenceEquals(currentBridge,bridge))return;
-   var last=confirmedProfile??(demo?null:ProfileSelection.Read(currentBridge!.Root));
+   var last=confirmedProfile??(demo?null:ProfileSelection.Read(userDataRoot!));
    var chosen=ProfileSelection.Choose(valid,last);
    changingProfiles=true;Profiles.Items.Clear();foreach(var name in valid)Profiles.Items.Add(name);Profiles.SelectedItem=chosen;changingProfiles=false;
    ProfilesHint.Text=valid.Length switch {0=>"Nenhum perfil válido. Prepare este PC no setup abaixo.",1=>"Este é o perfil padrão deste PC. A seleção é automática.",_=>"A última escolha é lembrada. Troque aqui quando necessário, com o supervisor parado."};
@@ -173,6 +183,7 @@ public partial class MainWindow : Window
   HistoryEmpty.Visibility=rows.Length==0?Visibility.Visible:Visibility.Collapsed;
   foreach(var r in rows)HistoryItems.Items.Add(new TextBlock{Text=$"#{r.Revision}    •    {LocalTime(r.Time)}    •    {r.Host}    •    {r.Hash[..Math.Min(12,r.Hash.Length)]}…    ✓ Publicada",Margin=new Thickness(0,0,0,20)});
  }
+ void ShowConsulting(){PrimaryButton.IsEnabled=false;StateBadge.Text="CONSULTANDO";StateTitle.Text="Consultando cloud...";StateDetail.Text="Aguarde a resposta inicial antes de assumir o mundo.";CloudText.Text="Consultando cloud...";RevisionText.Text=HostText.Text=SyncText.Text="—";IntegrityText.Text="Aguardando";ApiHealth.Text=CloudSession.Text=SummaryAvailability.Text=SummaryCanonical.Text="Aguardando";StateBadge.Foreground=(Brush)FindResource("TextSecondary");}
  void UpdateDiagnostic()=>DiagnosticText.Text=Presentation.Diagnostic(world,revision,visual,api,gameInstall,server,endpoint,sessionStatus);
  void ShowNotice(string text){NoticeText.Text=text;Notice.Visibility=Visibility.Visible;}
  void LayoutChanged(object sender,SizeChangedEventArgs e){
@@ -261,13 +272,15 @@ public partial class MainWindow : Window
    await LoadProfiles(["pc-a"]);Require(Profiles.SelectedItem?.ToString()=="pc-a");
    confirmedProfile="pc-b";await LoadProfiles(["pc-a","pc-b"]);Require(Profiles.SelectedItem?.ToString()=="pc-b");
    ShowPage("Home");
-   State("idle",false,false,"free");Require(PrimaryButton.IsEnabled&&PrimaryButton.Content.ToString()=="ASSUMIR E INICIAR");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
+   using(var pending=JsonDocument.Parse("{\"type\":\"state\",\"consulting\":true}"))Handle(pending.RootElement);
+   Require(!PrimaryButton.IsEnabled&&StateTitle.Text=="Consultando cloud...");
+   State("idle",false,false,"free");Require(HostText.Text=="Nenhum"&&SyncText.Text.StartsWith("PC A • "));Require(PrimaryButton.IsEnabled&&PrimaryButton.Content.ToString()=="ASSUMIR E INICIAR");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("running",true,false);Require(!PrimaryButton.IsEnabled&&action=="");await Task.Delay(80);Capture("running");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("finalizing",true,true);Require(!PrimaryButton.IsEnabled&&Steps.Items.Count==6);ShowPage("Home");await Task.Delay(100);Capture("finalizing");
    State("recovery_required",false,false,"recovery_required");Require(RecoveryPanel.Visibility==Visibility.Visible&&!RecoverButton.IsEnabled);Capture("recovery");
    State("completed",false,false,"free");
    foreach(var page in new[]{"Home","History","Diagnostics","Settings"}){ShowPage(page);await Task.Delay(80);Capture(page.ToLowerInvariant());}
-   ShowPage("Home");State("idle",false,false,"busy");Require(!PrimaryButton.IsEnabled);Capture("other-host");
+   ShowPage("Home");State("idle",false,false,"busy");Require(!PrimaryButton.IsEnabled&&HostText.Text=="PC A");Capture("other-host");
    using(var disconnected=JsonDocument.Parse("{\"type\":\"state\",\"phase\":\"idle\",\"owned\":false,\"busy\":false,\"cloud\":null}"))Handle(disconnected.RootElement);
    Require(!PrimaryButton.IsEnabled&&SummaryCanonical.Text=="Não verificado");Capture("offline");
    State("idle",false,false,"free");Width=1040;Height=780;await Task.Delay(160);Require(Grid.GetRow(RightWorkspace)==1&&SummaryCards.Columns==2);Capture("compact");

@@ -1,5 +1,5 @@
 param([ValidateSet('Inspect','Discover','Metadata','Install','Snapshot','Launch')][string]$Action,
- [string]$SaveRoot,[string]$FileName,[string]$StateRoot,[string]$Stage,[string]$ExpectedSha256,[long]$ExpectedBytes,
+ [string]$SaveRoot,[string]$FileName,[string]$StateRoot,[string]$BackupRoot,[string]$Stage,[string]$ExpectedSha256,[long]$ExpectedBytes,
  [string]$FixtureRoot,[string]$FixtureProcesses='[]')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object Text.UTF8Encoding($false)
@@ -72,11 +72,14 @@ if($Action -eq 'Discover') {
 $save=Target $FileName
 if($Action -eq 'Metadata') {Meta $save | ConvertTo-Json -Compress;exit}
 $state=PathSafe $StateRoot
-$stateBase=Join-Path $repo 'state\local-game'
+$layout=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../user-data/layout.json') -Raw | ConvertFrom-Json
+$userData=Join-Path $env:LOCALAPPDATA $layout.folder
+$stateBase=Join-Path $userData $layout.state
 if(-not (Within $state $stateBase) -and -not ($testing -and (Within $state $fixtureBase))){throw 'WS_STATE_ROOT_REJECTED'}
-foreach($dir in @('backups','staging')){[void](PathSafe (Join-Path $state $dir))}
+if($BackupRoot){$backups=PathSafe $BackupRoot;if(-not (Within $backups (Join-Path $userData $layout.backups))){throw 'WS_STATE_ROOT_REJECTED'}}else{$backups=PathSafe (Join-Path $state 'backups')}
+[void](PathSafe (Join-Path $state 'staging'))
 if($Action -eq 'Snapshot'){
- $backup=Join-Path $state ('backups/'+[guid]::NewGuid()+'.sav');$m=CopyVerified $save $backup
+ $backup=Join-Path $backups ([guid]::NewGuid().ToString()+'.sav');$m=CopyVerified $save $backup
  (Get-Item -LiteralPath $backup).IsReadOnly=$true
  $dest=Join-Path $state ('staging/'+[guid]::NewGuid()+'.sav');$copy=CopyVerified $backup $dest
  $final=Meta $save;if($final.sha256 -ne $copy.sha256 -or $final.bytes -ne $copy.bytes){throw 'WS_COPY_CHANGED'}
@@ -87,7 +90,7 @@ if([IO.Path]::GetDirectoryName($stagePath) -ne (Join-Path $state 'staging')){thr
 $meta=Meta $stagePath
 if($meta.sha256 -ne $ExpectedSha256 -or $meta.bytes -ne $ExpectedBytes){throw 'WS_IMPORT_INTEGRITY_FAILED'}
 $backup=$null
-if(Test-Path -LiteralPath $save){$backup=Join-Path $state ('backups/'+[guid]::NewGuid()+'.sav');[void](CopyVerified $save $backup);(Get-Item -LiteralPath $backup).IsReadOnly=$true}
+if(Test-Path -LiteralPath $save){$backup=Join-Path $backups ([guid]::NewGuid().ToString()+'.sav');[void](CopyVerified $save $backup);(Get-Item -LiteralPath $backup).IsReadOnly=$true}
 Stopped
 $temp=Join-Path $root ([guid]::NewGuid().ToString('N')+'.worldsync.tmp')
 [void](CopyVerified $stagePath $temp)
