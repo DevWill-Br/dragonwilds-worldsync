@@ -31,6 +31,34 @@ export class LocalGameFiles extends FixtureFiles {
   await this.targetHandle.writeFile(JSON.stringify({profile:this.profile.profile,pid:process.pid}));await this.targetHandle.sync();
   try{await super.lock();}catch(e){await this.targetHandle.close();await rename(this.targetLock,this.targetLock+'.'+randomUUID()+'.closed');throw e;}
  }
+ targetLockPath(){
+  const directory=this.io.fixtureRoot?path.join(path.dirname(this.root),'target-locks'):path.join(userDataPaths().state,'target-locks');
+  return path.join(directory,createHash('sha256').update(path.resolve(this.save).toLowerCase()).digest('hex')+'.lock');
+ }
+ async resumeGuards(){
+  if(this.lockFile&&this.targetHandle)return [];
+  const result=[];
+  for(const file of [this.targetLockPath(),path.join(this.root,'supervisor.lock')]){
+   await noLinks(file);
+   const bytes=await readFile(file);let value;try{value=JSON.parse(bytes);}catch{throw Error('LOCAL_RECOVERY_REQUIRED');}
+   if(!Number.isSafeInteger(value.pid)||value.pid<=0)throw Error('LOCAL_RECOVERY_REQUIRED');
+   if(file===this.targetLockPath()&&value.profile!==this.profile.profile)throw Error('SESSION_LOST');
+   try{process.kill(value.pid,0);throw Error('SUPERVISOR_STILL_ACTIVE');}catch(e){if(e.code!=='ESRCH')throw Error('SUPERVISOR_STILL_ACTIVE');}
+   result.push({file,bytes});
+  }
+  return result;
+ }
+ async resumeLock(){
+  if(this.lockFile&&this.targetHandle)return;
+  const gate=this.targetLockPath()+'.resume';await noLinks(gate);
+  const handle=await open(gate,'wx').catch(()=>{throw Error('LOCAL_RECOVERY_REQUIRED');});
+  try{
+   const guards=await this.resumeGuards();
+   for(const {file,bytes}of guards){if(!(await readFile(file)).equals(bytes))throw Error('LOCAL_RECOVERY_REQUIRED');}
+   for(const {file}of guards)await rename(file,file+'.'+randomUUID()+'.closed');
+   await this.lock();
+  }finally{await handle.close();await rename(gate,gate+'.'+randomUUID()+'.closed');}
+ }
  async unlock(){await super.unlock();await this.targetHandle?.close();await rename(this.targetLock,this.targetLock+'.'+randomUUID()+'.closed');}
  async operation(action,stage='',expected){return this.io.call(action,{StateRoot:this.root,BackupRoot:this.backups,...(stage?{Stage:stage,ExpectedSha256:expected.sha256,ExpectedBytes:expected.bytes}:{})});}
  async snapshot(){const s=await this.operation('Snapshot');if(this.requiredFinal&&(s.sha256!==this.requiredFinal.sha256||s.bytes!==this.requiredFinal.bytes))throw new Error('UNCONFIRMED_SAVE_CHANGE');return s;}

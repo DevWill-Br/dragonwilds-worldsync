@@ -7,15 +7,76 @@ export class LocalGameSession extends Supervisor {
    this.state={phase:'recovery_required',session:null,failure:error.message};throw error;
   }
  }
- async recover(error){clearInterval(this.timer);this.state.phase='recovery_required';this.state.failure=error.message;await this.record();}
- async pulse(){await this.owned();const beat=await this.cloud.heartbeat(this.state.session.sessionId);if(!beat.heartbeat||beat.sessionId!==this.state.session.sessionId)throw new Error('HEARTBEAT_INVALID');this.state.lastHeartbeatUtc=beat.lastHeartbeatUtc;await this.record();}
+ async recover(error){clearInterval(this.timer);delete this.state.connectionIssue;if(this.state.phase!=='recovery_required')this.state.resumePhase=this.state.phase;this.state.phase='recovery_required';this.state.failure=error.message;await this.record();}
+ constructor(options){super(options);this.now=options.now??Date.now;this.graceMs=options.graceMs??60000;this.retry=null;}
+ async record(){
+  const p=this.files.profile;
+  if(p?.machineId&&!this.state.identity)this.state.identity={profile:p.profile,worldId:p.worldId,host:p.host,machineId:p.machineId};
+  await super.record();
+ }
+ async owned(){
+  const status=await super.owned();
+  if(this.files.profile?.machineId)this.validateAuthority(this.state,status);
+  return status;
+ }
+ validateAuthority(j,status,{stale=false}={}){
+  const p=this.files.profile,s=j.session,c=status.session;
+  if(!p?.machineId||!p.host||!s?.sessionId||s.worldId!==p.worldId||status.worldId!==p.worldId)throw Error('SESSION_LOST');
+  if(j.identity&&['profile','worldId','host','machineId'].some(k=>j.identity[k]!==p[k]))throw Error('SESSION_LOST');
+  if(c?.sessionId!==s.sessionId||c.host!==p.host||c.machineId!==p.machineId)throw Error('SESSION_LOST');
+  if(!Number.isSafeInteger(s.baseRevision)||s.baseRevision<0||(s.baseRevision===0?s.baseSha256!==null:!/^[a-f0-9]{64}$/.test(s.baseSha256??''))||status.currentRevision!==s.baseRevision||c.baseRevision!==s.baseRevision||c.baseSha256!==s.baseSha256||(status.latest?.sha256??null)!==s.baseSha256||(s.baseRevision>0&&status.latest?.worldRevision!==s.baseRevision))throw Error('BASE_REVISION_CHANGED');
+  if(c.status!=='hosting'||(!stale&&status.availability!=='busy')||(stale&&!['busy','recovery_required'].includes(status.availability)))throw Error('RECOVERY_REQUIRED');
+ }
+ async pulse(){
+  if(this.retry&&this.now()-this.retry.since>=this.graceMs)throw Error('CLOUD_UNAVAILABLE');
+  if(this.retry&&this.now()<this.retry.next)return false;
+  try{
+   await this.owned();const beat=await this.cloud.heartbeat(this.state.session.sessionId);
+   if(!beat.heartbeat||beat.sessionId!==this.state.session.sessionId||!Number.isFinite(Date.parse(beat.lastHeartbeatUtc)))throw Error('HEARTBEAT_INVALID');
+   await this.owned();this.state.lastHeartbeatUtc=beat.lastHeartbeatUtc;this.retry=null;delete this.state.connectionIssue;await this.record();return true;
+  }catch(e){
+   if(e.message!=='CLOUD_UNAVAILABLE'||!['running','waiting_for_game'].includes(this.state.phase))throw e;
+   const now=this.now();this.retry??={since:now,attempt:0,next:now};
+   if(now-this.retry.since>=this.graceMs)throw e;
+   this.retry.next=now+Math.min(1000*2**Math.min(this.retry.attempt++,4),10000);
+   this.state.connectionIssue='CLOUD_UNAVAILABLE';await this.record();return false;
+  }
+ }
+ async resumeCandidate(j=undefined){
+  j??=await this.files.previous();
+  if(j?.phase!=='recovery_required'||j.failure!=='CLOUD_UNAVAILABLE'||!j.session||!(j.resumePhase==='running'||(!j.resumePhase&&j.gameSeen===true&&j.startedAtUtc)))throw Error('RESUME_NOT_ALLOWED');
+  if(j.session.baseRevision<1)throw Error('RESUME_NOT_ALLOWED');
+  this.validateAuthority(j,await this.cloud.status(),{stale:true});
+  await this.files.resumeGuards();
+  if(!(await this.server.inspect()).active)throw Error('RESUME_GAME_NOT_ACTIVE');
+  return j;
+ }
+ async resume(){return this.exclusive(async()=>{
+  const candidate=await this.resumeCandidate();
+  await this.files.resumeLock(candidate);
+  // Recheck after obtaining the local writer guard; never open/download a save.
+  const current=await this.files.previous();
+  if(JSON.stringify(current)!==JSON.stringify(candidate))throw Error('RESUME_NOT_ALLOWED');
+  this.state=structuredClone(candidate);
+  try{
+   await this.resumeCandidate(this.state);
+   const beat=await this.cloud.heartbeat(this.state.session.sessionId);
+   if(!beat.heartbeat||beat.sessionId!==this.state.session.sessionId||!Number.isFinite(Date.parse(beat.lastHeartbeatUtc)))throw Error('HEARTBEAT_INVALID');
+   this.validateAuthority(this.state,await this.cloud.status());
+   if(!(await this.server.inspect()).active)throw Error('RESUME_GAME_NOT_ACTIVE');
+   this.retry=null;this.state.phase='running';this.state.lastHeartbeatUtc=beat.lastHeartbeatUtc;
+   delete this.state.failure;delete this.state.connectionIssue;await this.record();this.beginHeartbeats();
+  }catch(e){await this.recover(e);throw e;}
+ });}
+
  beginHeartbeats(){
-  clearInterval(this.timer);this.timer=setInterval(()=>{if(this.polling)return;this.polling=true;void this.tick().catch(e=>this.recover(e)).finally(()=>{this.polling=false;});},1000);
+  clearInterval(this.timer);this.timer=setInterval(()=>{if(this.polling)return;this.polling=true;void this.tick().catch(()=>{}).finally(()=>{this.polling=false;});},1000);
  }
  async tick(){
+  try{
   const publish=await this.exclusive(async()=>{
    if(!this.state.session||this.state.phase==='recovery_required')return false;
-   if(Date.now()-Date.parse(this.state.lastHeartbeatUtc||0)>10000||!this.state.lastHeartbeatUtc)await this.pulse();
+   if(this.retry||this.now()-Date.parse(this.state.lastHeartbeatUtc||0)>10000||!this.state.lastHeartbeatUtc){if(!await this.pulse())return false;}
    if(!['waiting_for_game','running'].includes(this.state.phase))return false;
    const current=await this.server.inspect();
    if(this.state.phase==='waiting_for_game'){
@@ -24,12 +85,14 @@ export class LocalGameSession extends Supervisor {
     return false;
    }
    if(current.active)return false;
+   if(!await this.pulse())return false;
    this.state.phase='finalizing';await this.record();
    const stable=await this.files.stable(async()=>{if(Date.now()-Date.parse(this.state.lastHeartbeatUtc)>10000)await this.pulse();});
    this.files.requiredFinal=stable;this.state.lastStableSave=stable;
    this.state.phase='stopped';await this.record();return true;
   });
   if(publish){await this.publish();await this.finish();}
+  }catch(e){await this.recover(e);throw e;}
  }
  async play(){
   await this.server.assertStopped();
@@ -64,5 +127,5 @@ export class LocalGameSession extends Supervisor {
   if(final.session!==null||final.availability!=='free'||final.currentRevision!==this.state.publishedRevision)throw new Error('COMMIT_UNCONFIRMED');
   await this.files.unlock();
  }
- async close(){if(this.state.phase!=='completed'&&this.state.session)await this.recover(new Error('SESSION_RETAINED_ON_CLOSE'));clearInterval(this.timer);}
+ async close(){if(!['completed','recovery_required'].includes(this.state.phase)&&this.state.session)await this.recover(new Error('SESSION_RETAINED_ON_CLOSE'));clearInterval(this.timer);}
 }

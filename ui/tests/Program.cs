@@ -48,3 +48,9 @@ if(File.Exists(Path.Combine(repo,"src/local-game/profile.mjs"))){
 CredentialTests.Run();
 
 await CredentialTests.BridgeRoundtrip();
+
+Check(Presentation.CanResume("recovery_required",true,false));
+Check(!Presentation.CanResume("recovery_required",false,false));
+Check(!Presentation.CanResume("recovery_required",true,true));
+Check(!Presentation.CanResume("running",true,false));
+Console.WriteLine("PASS: resume requires validated recovery, no active command; running cannot invoke recovery.");

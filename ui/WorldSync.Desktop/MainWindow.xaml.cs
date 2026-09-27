@@ -70,14 +70,14 @@ public partial class MainWindow : Window
     var avail=connected?S(c,"availability"):"unknown";
     sessionStatus=avail switch {"free"=>"Livre","busy"=>"Hospedando","committing"=>"Publicando","recovery_required"=>"Recuperação necessária",_=>"Não verificada"};
     var v=Presentation.Map(phase,avail,owned,busy,connected);visual=v.Key;
-    StateBadge.Text=v.Key switch {"free"=>"DISPONÍVEL","running"=>"VOCÊ ESTÁ HOSPEDANDO","finalizing"=>"FINALIZANDO","recovery_required"=>"RECUPERAÇÃO NECESSÁRIA","publishing"=>"SINCRONIZANDO","completed"=>"CONCLUÍDO","assuming"=>"PREPARANDO","waiting_for_game"=>"ABRA O JOGO","prepared"=>"PREPARADO","busy"=>"EM USO",_=>"INDISPONÍVEL"};StateTitle.Text=v.Title;StateDetail.Text=v.Detail;
+    StateBadge.Text=v.Key switch {"free"=>"DISPONÍVEL","running"=>"VOCÊ ESTÁ HOSPEDANDO","finalizing"=>"FINALIZANDO","recovery_required"=>"RECUPERAÇÃO NECESSÁRIA","publishing"=>"SINCRONIZANDO","completed"=>"CONCLUÍDO","assuming"=>"PREPARANDO","waiting_for_game"=>"ABRA O JOGO","prepared"=>"PREPARADO","busy"=>"EM USO",_=>"INDISPONÍVEL"};StateTitle.Text=v.Title;StateDetail.Text=S(m,"connectionIssue")=="CLOUD_UNAVAILABLE"?"Conexão temporariamente indisponível. Tentando reconectar; publicação bloqueada até confirmar a sessão.":v.Detail;
     action=v.Action;PrimaryButton.Content=v.Cta=="ASSUMIR E JOGAR"?"ASSUMIR E INICIAR":v.Cta;PrimaryButton.IsEnabled=v.Enabled && (connected && N(c,"revision")>0);
     Profiles.IsEnabled=!owned&&!busy;SetupButton.IsEnabled=TokenButton.IsEnabled=ReplaceTokenButton.IsEnabled=RemoveTokenButton.IsEnabled=DiscoverButton.IsEnabled=OptionsButton.IsEnabled=!owned&&!busy&&!restarting;
     AdoptButton.IsEnabled=!owned&&!busy&&connected&&N(c,"revision")==0&&avail=="free";
     if(v.Key=="busy"&&!string.IsNullOrWhiteSpace(S(c,"host")))StateTitle.Text=S(c,"host")+" está hospedando";
     RecoveryPanel.Visibility=v.Key=="recovery_required"?Visibility.Visible:Visibility.Collapsed;
-    RecoverButton.IsEnabled=B(m,"recoveryEligible")&&!busy;
-    RecoveryHint.Text=RecoverButton.IsEnabled?"Selecione o backup preservado para executar a recuperação já validada.":"Este caso não dispõe de recuperação genérica validada. Copie o diagnóstico e preserve os saves e backups.";
+    RecoverButton.IsEnabled=Presentation.CanResume(phase,B(m,"recoveryEligible"),busy);
+    RecoveryHint.Text=RecoverButton.IsEnabled?"Retome a mesma sessão deste PC, sem baixar ou substituir o mundo em uso.":"Este caso não dispõe de recuperação genérica validada. Copie o diagnóstico e preserve os saves e backups.";
     RenderSteps(v.Step);
     api=connected?"Disponível":"Indisponível";CloudText.Text="Cloud: "+api;
     server=owned&&phase=="running"?"Hospedando (supervisor)":owned&&phase=="finalizing"?"Verificando save":phase is "stopped" or "completed"?"Encerrado (registro local)":"Não observado ao vivo";
@@ -248,7 +248,7 @@ public partial class MainWindow : Window
   catch{ShowNotice("Não foi possível remover ou reconectar. Verifique o armazenamento seguro do Windows.");}
  }
 
- void RecoverClick(object sender,RoutedEventArgs e)=>ShowNotice("Preserve os arquivos e a sessão para recuperação explícita. Nenhum envio foi iniciado.");
+ void RecoverClick(object sender,RoutedEventArgs e){if(!RecoverButton.IsEnabled)return;RecoverButton.IsEnabled=false;Send(new{action="resume"});}
  void OnClosing(object? sender,CancelEventArgs e){if(allowClose||demo)return;e.Cancel=true;if(restarting){ShowNotice("Aguarde a reconexão da credencial antes de fechar.");return;}if(!Presentation.CanClose(owned,busy)){ShowNotice("Mantenha o app aberto até fechar o jogo e concluir a sincronização. O supervisor continua ativo.");return;}if(bridge==null){allowClose=true;e.Cancel=false;}else Send(new{action="quit"});}
  sealed class DemoCredentialStore:ICredentialStore {string? value;public string? Read()=>value;public void Write(string token)=>value=token;public void Delete()=>value=null;}
  void RenderDemo()
@@ -278,6 +278,8 @@ public partial class MainWindow : Window
    State("running",true,false);Require(!PrimaryButton.IsEnabled&&action=="");await Task.Delay(80);Capture("running");PrimaryClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("start"));
    State("finalizing",true,true);Require(!PrimaryButton.IsEnabled&&Steps.Items.Count==6);ShowPage("Home");await Task.Delay(100);Capture("finalizing");
    State("recovery_required",false,false,"recovery_required");Require(RecoveryPanel.Visibility==Visibility.Visible&&!RecoverButton.IsEnabled);Capture("recovery");
+   using(var resumable=JsonDocument.Parse("{\"type\":\"state\",\"phase\":\"recovery_required\",\"recoveryEligible\":true,\"owned\":false,\"busy\":false}"))Handle(resumable.RootElement);
+   Require(RecoverButton.IsEnabled&&RecoverButton.Content.ToString()=="Retomar sessão deste PC");RecoverClick(this,new RoutedEventArgs());Require(demoCommands.Last().Contains("resume")&&!RecoverButton.IsEnabled);
    State("completed",false,false,"free");
    foreach(var page in new[]{"Home","History","Diagnostics","Settings"}){ShowPage(page);await Task.Delay(80);Capture(page.ToLowerInvariant());}
    ShowPage("Home");State("idle",false,false,"busy");Require(!PrimaryButton.IsEnabled&&HostText.Text=="PC A");Capture("other-host");

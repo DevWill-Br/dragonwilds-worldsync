@@ -3,6 +3,7 @@ public record VisualState(string Key,string Title,string Detail,string Cta,strin
 public static class Presentation {
  public static string CurrentHost(string availability,string host)=>availability=="free"?"Nenhum":string.IsNullOrWhiteSpace(host)?"Não disponível":host;
  public static string LastSync(string host,string utc){var name=string.IsNullOrWhiteSpace(host)?"Não disponível":host;var time=DateTimeOffset.TryParse(utc,out var date)?date.ToLocalTime().ToString("dd MMM • HH:mm"):"Não disponível";return name+" • "+time;}
+ public static bool CanResume(string phase,bool eligible,bool busy)=>phase=="recovery_required"&&eligible&&!busy;
  public static bool CanClose(bool owned,bool busy)=>!owned&&!busy;
  public static VisualState Map(string phase,string availability,bool owned,bool busy,bool connected){
   if(phase=="recovery_required"||availability=="recovery_required"||(!owned&&!busy&&phase is not "idle" and not "completed"))return new("recovery_required","Recuperação necessária","Save, backups e sessão preservados. Não inicie outra sessão.","RECUPERAÇÃO NECESSÁRIA","",false,-1);
@@ -28,7 +29,9 @@ public static class Presentation {
   "INVALID_CLOUD_CONFIG" or "UNAUTHORIZED"=>"Configure uma credencial válida para a cloud.",
   "CLOUD_UNAVAILABLE"=>"Não foi possível alcançar a cloud. Verifique a conexão.",
   "GAME_START_TIMEOUT"=>"O jogo não foi observado iniciando. A sessão permanece reservada para recuperação.",
-  "LOCAL_RECOVERY_REQUIRED" or "RECOVERY_REQUIRED" or "SESSION_LOST"=>"É necessária recuperação explícita. Preserve os saves, backups e registros locais.",
+  "SUPERVISOR_STILL_ACTIVE"=>"Outro supervisor deste PC ainda está aberto. Feche a instância anterior antes de retomar. Nenhum lock foi removido.",
+  "RESUME_GAME_NOT_ACTIVE"=>"O jogo não está ativo. Esta retomada exige a partida ainda em execução; preserve os registros.",
+  "RESUME_NOT_ALLOWED" or "BASE_REVISION_CHANGED" or "HEARTBEAT_INVALID" or "LOCAL_RECOVERY_REQUIRED" or "RECOVERY_REQUIRED" or "SESSION_LOST"=>"É necessária recuperação explícita. Preserve os saves, backups e registros locais.",
   "COMMIT_UNCONFIRMED"=>"Publicação não confirmada. Preserve a sessão; não repita o envio manualmente.",
   "ADOPTION_FILE_CHANGED" or "DOWNLOAD_INTEGRITY_FAILED" or "UNCONFIRMED_SAVE_CHANGE"=>"O arquivo não corresponde ao hash esperado. A operação foi bloqueada e o progresso preservado.",
   _=>"A operação foi bloqueada. Preserve os arquivos e consulte o diagnóstico. Nenhum detalhe sensível foi exibido."
