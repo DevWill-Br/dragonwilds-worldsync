@@ -1,3 +1,4 @@
+import {journalReplaceFailure,JOURNAL_REPLACE_BUSY} from '../lifecycle/journal-errors.mjs';
 import {Supervisor} from '../lifecycle/supervisor.mjs';
 import {digest} from '../lifecycle/cloud.mjs';
 export class LocalGameSession extends Supervisor {
@@ -7,7 +8,7 @@ export class LocalGameSession extends Supervisor {
    this.state={phase:'recovery_required',session:null,failure:error.message};throw error;
   }
  }
- async recover(error){clearInterval(this.timer);delete this.state.connectionIssue;if(this.state.phase!=='recovery_required')this.state.resumePhase=this.state.phase;this.state.phase='recovery_required';this.state.failure=error.message;await this.record();}
+ async recover(error){clearInterval(this.timer);delete this.state.connectionIssue;if(this.state.phase!=='recovery_required')this.state.resumePhase=this.state.phase;this.state.phase='recovery_required';this.state.failure=error.code===JOURNAL_REPLACE_BUSY?JOURNAL_REPLACE_BUSY:error.message;delete this.state.failureCode;if(error.code===JOURNAL_REPLACE_BUSY)this.state.failureCode=JOURNAL_REPLACE_BUSY;await this.record();}
  constructor(options){super(options);this.now=options.now??Date.now;this.graceMs=options.graceMs??60000;this.retry=null;}
  async record(){
   const p=this.files.profile;
@@ -44,12 +45,13 @@ export class LocalGameSession extends Supervisor {
  }
  async resumeCandidate(j=undefined){
   j??=await this.files.previous();
+  const journalBusy=journalReplaceFailure(j,this.files.journal);
   const retained=j?.failure==='SESSION_RETAINED_ON_CLOSE';
   // Old builds overwrote the original recovery reason on close. Accept only
   // evidence of a running game; all authority/process/lock checks below still apply.
   const running=j?.resumePhase==='running'||(!j?.resumePhase&&j?.gameSeen===true&&j?.startedAtUtc);
-  if(j?.phase!=='recovery_required'||(!retained&&j.failure!=='CLOUD_UNAVAILABLE')||!j.session||!running)throw Error('RESUME_NOT_ALLOWED');
-  if(retained&&(j.gameSeen!==true||typeof j.startedAtUtc!=='string'||!Number.isFinite(Date.parse(j.startedAtUtc))))throw Error('RESUME_NOT_ALLOWED');
+  if(j?.phase!=='recovery_required'||(!retained&&!journalBusy&&j.failure!=='CLOUD_UNAVAILABLE')||!j.session||!running)throw Error('RESUME_NOT_ALLOWED');
+  if((retained||journalBusy)&&(j.gameSeen!==true||typeof j.startedAtUtc!=='string'||!Number.isFinite(Date.parse(j.startedAtUtc))))throw Error('RESUME_NOT_ALLOWED');
   if(j.session.baseRevision<1)throw Error('RESUME_NOT_ALLOWED');
   this.validateAuthority(j,await this.cloud.status(),{stale:true});
   await this.files.resumeGuards();
@@ -70,7 +72,7 @@ export class LocalGameSession extends Supervisor {
    this.validateAuthority(this.state,await this.cloud.status());
    if(!(await this.server.inspect()).active)throw Error('RESUME_GAME_NOT_ACTIVE');
    this.retry=null;this.state.phase='running';this.state.lastHeartbeatUtc=beat.lastHeartbeatUtc;
-   delete this.state.failure;delete this.state.connectionIssue;await this.record();this.beginHeartbeats();
+   delete this.state.failure;delete this.state.failureCode;delete this.state.connectionIssue;await this.record();this.beginHeartbeats();
   }catch(e){await this.recover(e);throw e;}
  });}
 

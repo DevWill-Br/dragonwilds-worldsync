@@ -78,3 +78,14 @@ test('legacy retained-on-close keeps every cloud, process and live-lock guard',a
  }
 });
 test('closing new build preserves legacy retained-on-close cause exactly',async()=>{const f=await retainedFixture();const before=f.journal();await f.s.close();assert.deepEqual(f.journal(),before);});
+async function journalFailureFixture(structured=false){const f=fixture();await f.recovery();f.files.journal='C:\\Synthetic\\WorldSync\\state\\synthetic\\lifecycle.json';f.s.state.failure=structured?'JOURNAL_REPLACE_BUSY':`EPERM: operation not permitted, rename '${f.files.journal}.12345678-1234-4234-8234-123456789abc.tmp' -> '${f.files.journal}'`;if(structured)f.s.state.failureCode='JOURNAL_REPLACE_BUSY';await f.files.record(f.s.state);return f;}
+test('journal replace recovery keeps session and has no save IO until game closes',async()=>{
+ for(const structured of [false,true]){const f=await journalFailureFixture(structured);await f.s.resumeCandidate();assert.equal(f.counts.beat,0);await f.s.resume();assert.equal(f.s.state.phase,'running');assert.equal(f.s.state.failureCode,undefined);for(const key of ['acquire','download','install','snapshot','commit'])assert.equal(f.counts[key],0);f.server.running=false;await f.s.tick();await f.s.tick();assert.equal(f.counts.commit,1);assert.equal(f.cloud.value.currentRevision,5);}
+});
+test('journal recovery rejects arbitrary filesystem errors, invalid evidence and authority',async()=>{
+ for(const alter of [
+ f=>f.s.state.failure=f.s.state.failure.replace('rename','unlink'),f=>f.s.state.failure=f.s.state.failure.replace('EPERM','EACCES'),f=>f.s.state.failure=f.s.state.failure.replaceAll('lifecycle.json','other.json'),f=>f.s.state.failure=f.s.state.failure.replace('12345678-1234-4234-8234-123456789abc','not-uuid'),f=>f.s.state.failure=f.s.state.failure.replaceAll('synthetic\\','foreign\\'),
+ f=>delete f.s.state.gameSeen,f=>delete f.s.state.startedAtUtc,f=>f.s.state.startedAtUtc='invalid',f=>f.server.running=false,f=>f.cloud.value.session.sessionId='other',f=>f.cloud.value.currentRevision=5,f=>f.cloud.value.latest.sha256='a'.repeat(64),f=>f.cloud.value.session.machineId='foreign',f=>f.cloud.value.session.host='foreign',f=>f.files.resumeGuards=async()=>{throw Error('SUPERVISOR_STILL_ACTIVE');}
+ ]){const f=await journalFailureFixture();alter(f);await f.files.record(f.s.state);const before=f.journal();await assert.rejects(f.s.resumeCandidate());await assert.rejects(f.s.resume());assert.deepEqual(f.journal(),before);assert.ok(Object.values(f.counts).every(n=>n===0));}
+});
+test('busy record recovery persists sanitized structured failure',async()=>{const f=fixture();await f.s.recover(Object.assign(Error('raw private path'),{code:'JOURNAL_REPLACE_BUSY'}));assert.equal(f.journal().failureCode,'JOURNAL_REPLACE_BUSY');assert.equal(f.journal().failure,'JOURNAL_REPLACE_BUSY');assert.equal(f.journal().resumePhase,'running');});

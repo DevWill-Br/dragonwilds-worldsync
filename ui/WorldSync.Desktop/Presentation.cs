@@ -27,6 +27,7 @@ public static class Presentation {
   "WORLD_ALREADY_EXISTS"=>"Este mundo já existe na cloud. Use Assumir e jogar; a adoção não substitui revisões.",
   "WS_SAVE_DIRECTORY_MISSING"=>"O diretório de saves conhecido não foi encontrado. Abra o jogo normalmente para preparar seu perfil e feche-o antes do setup.",
   "INVALID_CLOUD_CONFIG" or "UNAUTHORIZED"=>"Configure uma credencial válida para a cloud.",
+  "JOURNAL_REPLACE_BUSY"=>"O Windows impediu a gravação do registro local após várias tentativas. Preserve os registros; a retomada depende de validar a mesma sessão.",
   "CLOUD_UNAVAILABLE"=>"Não foi possível alcançar a cloud. Verifique a conexão.",
   "GAME_START_TIMEOUT"=>"O jogo não foi observado iniciando. A sessão permanece reservada para recuperação.",
   "SUPERVISOR_STILL_ACTIVE"=>"Outro supervisor deste PC ainda está aberto. Feche a instância anterior antes de retomar. Nenhum lock foi removido.",

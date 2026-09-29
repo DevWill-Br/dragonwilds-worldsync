@@ -41,3 +41,22 @@ Node sintético encerrado para locks, testes existentes e smoke WPF em --demo.
 Compatibilidade legada: SESSION_RETAINED_ON_CLOSE não dispensa nenhuma validação
 de processo, locks, perfil, posse ou base canônica. Não aceita outros failures.
 Testes com journal/locks reais de filesystem são exclusivamente sintéticos.
+
+## Replace do journal no Windows
+
+atomicJson mantém temp exclusivo + fsync + close e substituição atômica. Apenas
+EPERM/EBUSY no rename recebem cinco retries: 25/50/100/200/400 ms (seis tentativas
+no total). Erros permanentes não viram sucesso. Em falha, o temp permanece como
+evidência; em sucesso o rename o consome. Nunca se remove primeiro o destino.
+As gravações são enfileiradas por instância e por caminho no processo, capturando
+o estado no momento da chamada; locks existentes continuam garantindo exclusão
+entre supervisores. Persistência continuadamente indisponível pode impedir até
+a gravação de recovery: o supervisor permanece bloqueado em memória, sem publicar.
+
+Esgotamento do replace de lifecycle.json gera failureCode/failure
+JOURNAL_REPLACE_BUSY sem caminhos brutos. A retomada aceita esse código estruturado
+ou a mensagem legada estrita EPERM/EBUSY + rename do MESMO
+lifecycle.json.<UUID>.tmp para lifecycle.json no diretório do perfil selecionado.
+Exige gameSeen=true, startedAtUtc válido e evidência running, além de todas as
+validações anteriores. Não aceita EPERM genérico, outros arquivos ou paths.
+Nenhuma recuperação de produção foi executada para testar esta mudança.
